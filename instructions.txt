@@ -1,0 +1,158 @@
+You are tasked with building a desktop application using PySide6 and Firebase (Firestore & Authentication). The app will be a comprehensive school management system tailored for administrative staff and teachers. Use the following detailed instructions to build the app from scratch in VS Code with clear separation between frontend and backend components.
+
+## Project Details
+
+- Application Type: Desktop (Cross-platform)
+- Language: Python 3
+- Frontend Framework: PySide6
+- Backend Service: Firebase (Authentication and Firestore)
+- IDE: Visual Studio Code (VS Code)
+- Architecture: Clear frontend-backend split.
+
+## Core Requirements & Features
+
+Your final app must include the following features:
+
+### User Authentication:
+- Sign-in page with email/password (Firebase Authentication via REST API).
+- Signup page allowing users to register via Firebase Authentication REST API.
+- Role-based access (Administrator & Teachers) verified from Firestore after login.
+
+### Administrator Panel:
+- Add, Edit, and Remove students.
+- Assign students to year groups (Y7, Y8, Y9, Y10, Y11).
+- Assign teachers to specific subjects (Science, Maths, English, French).
+- Manage school terms (3 per school year from September to July):
+  - Define term names, start and end dates.
+- Generate student reports each term (subject results & attendance summary).
+
+### Teacher Panel:
+- Access daily attendance registers per subject & year group.
+- Record daily student attendance (present/absent).
+- Input student grades for each subject at end of each term.
+
+### Reports:
+- Admins can select a term and generate summarized student reports:
+  - Attendance percentage calculated from daily records.
+  - Subject grades entered by teachers displayed in tabular format.
+
+## File & Folder Structure
+
+Use this exact folder structure in VS Code:
+
+school-system/
+├── backend/
+│   ├── auth_manager.py
+│   ├── firestore_manager.py
+│   └── models.py
+│
+├── frontend/
+│   ├── main_window.py
+│   ├── login_view.py
+│   ├── signup_view.py
+│   ├── admin_dashboard.py
+│   ├── teacher_dashboard.py
+│   ├── term_management_view.py
+│   ├── manage_students_view.py
+│   ├── assign_teachers_view.py
+│   ├── attendance_register_view.py
+│   ├── input_results_view.py
+│   └── reports_view.py
+│
+├── services/
+│   └── firebase_service.py
+│
+├── app.py
+├── requirements.txt
+└── .env
+
+## Firestore Database Structure
+All interactions with Firestore will be performed using the Firebase REST API, managed by `backend/firestore_manager.py`.
+
+users (collection)
+    └── uid (doc)
+        ├── email: "[user-email]"
+        └── role: "administrator" / "teacher"
+
+students (collection)
+    └── student_id (doc)
+        ├── name: "Student Name"
+        ├── year_group: "Y9"
+        └── subjects: ["Science", "Maths"]
+
+terms (collection)
+    └── term_id (doc)
+        ├── name: "Autumn Term"
+        ├── start_date: "2024-09-01"
+        └── end_date: "2024-12-15"
+
+attendance (collection)
+    └── date (doc)
+        └── subject_yeargroup:
+            └── student_id: "Present"/"Absent"
+
+reports (collection)
+    └── term_id (doc)
+        └── students (subcollection)
+            └── student_id (doc)
+                ├── attendance_percentage: 95
+                └── subjects:
+                    └── Maths: "A"
+
+## Firebase Security Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+
+## UI Guidelines
+
+- Clean & professional UI using PySide6 widgets.
+- Include basic UI feedback for operations like saving, errors, and validation.
+- Make all tables stretchable, responsive, and clearly readable.
+- Clearly separate views from data logic.
+
+## Main Application Flow
+
+1. Open login view.
+2. Successful login directs to either:
+    - Admin dashboard
+    - Teacher dashboard
+
+## Python Dependencies (requirements.txt)
+
+PySide6
+requests
+python-dotenv
+
+## Authentication Guidelines (NO firebase-admin)
+
+- Use Firebase Authentication REST API.
+- Role check is done by retrieving the user's role from Firestore.
+
+## Signup Feature
+
+- Implement Signup Page via Firebase Authentication REST API.
+- Store user details (email and role) in Firestore immediately after signup.
+
+## Output Expectation
+
+- Provide full Python code for each file with paths.
+- Include detailed explanations for each file.
+
+## Instructions to Gemini:
+
+Step 1: Create the complete project structure in VS Code. 
+Step 2: Provide full initial setup code for the backend managers and remaining frontend views:
+    - `backend/auth_manager.py` (Implement Firebase Auth REST API calls for sign-in and sign-up)
+    - `backend/firestore_manager.py` (Implement Firestore REST API calls, including `get_user_role(id_token, user_uid)` and `create_user_profile(id_token, user_uid, email, role)`)
+    - `frontend/login_view.py` (Basic structure, emit `login_successful(id_token, user_uid)` and `signup_requested`)
+    - `frontend/signup_view.py` (Basic structure, emit `signup_successful(user_uid)` and `login_requested`)
+    - `services/firebase_service.py` (Ensure it's complete for REST API base URLs and API key access)
+
+Begin your answer with "Step 1: Project Structure".
