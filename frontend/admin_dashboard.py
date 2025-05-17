@@ -13,10 +13,11 @@ from frontend.reports_view import ReportsView
 class AdminDashboard(QWidget):
     """Dashboard view for administrators"""
     
-    def __init__(self, id_token, user_uid):
+    def __init__(self, id_token, user_uid, name=""):
         super().__init__()
         self.id_token = id_token
         self.user_uid = user_uid
+        self.user_name = name
         self.setup_ui()
     
     def setup_ui(self):
@@ -27,8 +28,9 @@ class AdminDashboard(QWidget):
         # Header
         header_layout = QHBoxLayout()
         
-        # Title
-        title_label = QLabel("Administrator Dashboard")
+        # Title with admin name
+        title_text = f"Administrator Dashboard - Welcome, {self.user_name}" if self.user_name else "Administrator Dashboard"
+        title_label = QLabel(title_text)
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setBold(True)

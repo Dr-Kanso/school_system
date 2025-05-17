@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-    QPushButton, QFormLayout, QMessageBox, QSpacerItem
+    QPushButton, QFormLayout, QMessageBox, QSpacerItem, QCheckBox
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QSettings
 from PySide6.QtGui import QFont
 
 from backend.auth_manager import AuthManager
@@ -18,6 +18,7 @@ class LoginView(QWidget):
         super().__init__()
         self.auth_manager = AuthManager()
         self.setup_ui()
+        self.load_remembered_credentials()
     
     def setup_ui(self):
         """Set up the user interface"""
@@ -62,6 +63,10 @@ class LoginView(QWidget):
         
         main_layout.addLayout(form_layout)
         
+        # Remember me checkbox
+        self.remember_checkbox = QCheckBox("Remember my details")
+        main_layout.addWidget(self.remember_checkbox)
+        
         # Add spacing
         main_layout.addSpacerItem(QSpacerItem(20, 20))
         
@@ -103,6 +108,13 @@ class LoginView(QWidget):
         success, id_token, user_uid, error_message = self.auth_manager.sign_in(email, password)
         
         if success:
+            # Save credentials if remember checkbox is checked
+            if self.remember_checkbox.isChecked():
+                self.save_remembered_credentials(email)
+            else:
+                # Clear any saved credentials if not checked
+                self.clear_remembered_credentials()
+                
             self.login_successful.emit(id_token, user_uid)
         else:
             QMessageBox.critical(self, "Login Failed", f"Failed to login: {error_message}")
@@ -110,3 +122,21 @@ class LoginView(QWidget):
     def handle_signup_requested(self):
         """Handle signup link click"""
         self.signup_requested.emit()
+        
+    def save_remembered_credentials(self, email):
+        """Save the email for future logins"""
+        settings = QSettings("SchoolSystem", "LoginDetails")
+        settings.setValue("remembered_email", email)
+    
+    def load_remembered_credentials(self):
+        """Load saved email if exists"""
+        settings = QSettings("SchoolSystem", "LoginDetails")
+        remembered_email = settings.value("remembered_email", "")
+        if remembered_email:
+            self.email_input.setText(remembered_email)
+            self.remember_checkbox.setChecked(True)
+    
+    def clear_remembered_credentials(self):
+        """Clear any saved credentials"""
+        settings = QSettings("SchoolSystem", "LoginDetails")
+        settings.remove("remembered_email")
