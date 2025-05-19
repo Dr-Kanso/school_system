@@ -28,7 +28,7 @@ class AttendanceRegisterView(QWidget):
         # Date selection
         date_label = QLabel("Date:")
         self.date_selector = QDateEdit()
-        self.date_selector.setDate(QDate.currentDate())
+        self.date_selector.setDate(QDate.currentDate())  # This line sets the default date to today
         self.date_selector.setCalendarPopup(True)
         
         # Subject selection
