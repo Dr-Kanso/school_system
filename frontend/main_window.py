@@ -72,11 +72,15 @@ class MainWindow(QMainWindow):
             if not self.admin_dashboard:
                 self.admin_dashboard = AdminDashboard(self.id_token, self.user_uid, name)
                 self.stacked_widget.addWidget(self.admin_dashboard)
+                # Connect logout signal
+                self.admin_dashboard.logout_requested.connect(self.handle_logout)
             self.stacked_widget.setCurrentWidget(self.admin_dashboard)
         elif role == "teacher":
             if not self.teacher_dashboard:
                 self.teacher_dashboard = TeacherDashboard(self.id_token, self.user_uid, name)
                 self.stacked_widget.addWidget(self.teacher_dashboard)
+                # Connect logout signal
+                self.teacher_dashboard.logout_requested.connect(self.handle_logout)
             self.stacked_widget.setCurrentWidget(self.teacher_dashboard)
         else:
             QMessageBox.warning(self, "Unknown Role", f"User has unknown role: {role}")
@@ -92,11 +96,15 @@ class MainWindow(QMainWindow):
             if not self.admin_dashboard:
                 self.admin_dashboard = AdminDashboard(self.id_token, self.user_uid, name)
                 self.stacked_widget.addWidget(self.admin_dashboard)
+                # Connect logout signal
+                self.admin_dashboard.logout_requested.connect(self.handle_logout)
             self.stacked_widget.setCurrentWidget(self.admin_dashboard)
         elif role == "teacher":
             if not self.teacher_dashboard:
                 self.teacher_dashboard = TeacherDashboard(self.id_token, self.user_uid, name)
                 self.stacked_widget.addWidget(self.teacher_dashboard)
+                # Connect logout signal
+                self.teacher_dashboard.logout_requested.connect(self.handle_logout)
             self.stacked_widget.setCurrentWidget(self.teacher_dashboard)
     
     @Slot()
@@ -108,3 +116,21 @@ class MainWindow(QMainWindow):
     def show_login_view(self):
         """Switch to login view"""
         self.stacked_widget.setCurrentWidget(self.login_view)
+        
+    @Slot()
+    def handle_logout(self):
+        """Handle logout request from dashboards"""
+        # Clear authentication state
+        self.id_token = None
+        self.user_uid = None
+        self.auth_manager.id_token = None
+        self.auth_manager.user_uid = None
+        
+        # Reset login form (clear password but keep email if it's remembered)
+        self.login_view.password_input.clear()
+        
+        # Switch to the login view
+        self.show_login_view()
+        
+        # Optional: Show logout confirmation
+        QMessageBox.information(self, "Logged Out", "You have been successfully logged out.")

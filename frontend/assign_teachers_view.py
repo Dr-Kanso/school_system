@@ -32,8 +32,30 @@ class TeacherAssignmentTableModel(QAbstractTableModel):
         if col == 0:
             return assignment.get('teacher_name', '')
         elif col == 1:
+            # Standardize year groups display
             year_groups = assignment.get('year_groups', [])
-            return ", ".join(year_groups) if year_groups else "None"
+            
+            # Handle different possible formats of year_groups
+            if isinstance(year_groups, list):
+                # If it's already a list, join with commas
+                return ", ".join(str(yg) for yg in year_groups)
+            elif isinstance(year_groups, str):
+                # If it's a string that looks like a list representation, clean it up
+                if year_groups.startswith('[') and year_groups.endswith(']'):
+                    try:
+                        # Try to convert string representation to an actual list
+                        import ast
+                        parsed_groups = ast.literal_eval(year_groups)
+                        if isinstance(parsed_groups, list):
+                            # Only include standardized year groups (Y7, Y8, Y9, Y10, Y11)
+                            valid_groups = [g for g in parsed_groups if g.strip() in ["Y7", "Y8", "Y9", "Y10", "Y11"]]
+                            return ", ".join(valid_groups)
+                    except:
+                        pass
+                # Return the string as is
+                return year_groups
+            else:
+                return "None"
         elif col == 2:
             return assignment.get('subject', '')
         elif col == 3:
@@ -183,7 +205,15 @@ class AssignTeachersView(QWidget):
     def assign_teacher(self):
         """Handle assigning a teacher to year groups and subject"""
         teacher_id = self.teacher_dropdown.currentData()
-        selected_year_groups = [yg for yg, cb in self.year_group_checkboxes.items() if cb.isChecked()]
+        
+        # Ensure we're getting clean year group values
+        selected_year_groups = []
+        for year_group, checkbox in self.year_group_checkboxes.items():
+            if checkbox.isChecked():
+                # Ensure year group format is standardized (Y7, Y8, etc.)
+                if year_group.strip() in ["Y7", "Y8", "Y9", "Y10", "Y11"]:
+                    selected_year_groups.append(year_group.strip())
+        
         subject = self.subject_dropdown.currentText()
         
         if not teacher_id or teacher_id == "Select Teacher...":
@@ -205,6 +235,15 @@ class AssignTeachersView(QWidget):
                 if assignment.get("subject") == subject:
                     # Compare year groups
                     existing_year_groups = assignment.get("year_groups", [])
+                    
+                    # Ensure consistent format for comparison
+                    if isinstance(existing_year_groups, str):
+                        try:
+                            import ast
+                            existing_year_groups = ast.literal_eval(existing_year_groups)
+                        except:
+                            existing_year_groups = [existing_year_groups]
+                    
                     # Check if any year group already assigned
                     overlap = [yg for yg in selected_year_groups if yg in existing_year_groups]
                     if overlap:
@@ -221,7 +260,7 @@ class AssignTeachersView(QWidget):
             # Create the assignment in Firebase
             assignment_data = {
                 "teacher_id": teacher_id,
-                "year_groups": selected_year_groups,
+                "year_groups": selected_year_groups,  # This should be a clean array
                 "subject": subject
             }
             

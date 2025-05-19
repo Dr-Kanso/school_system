@@ -1,8 +1,9 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QTableView,
-    QHBoxLayout, QFormLayout, QLineEdit, QDateEdit, QMessageBox
+    QHBoxLayout, QFormLayout, QLineEdit, QMessageBox,
+    QComboBox
 )
-from PySide6.QtCore import Qt, QDate, QAbstractTableModel, QModelIndex
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 from PySide6.QtGui import QFont
 from utils.firebase_client import FirebaseClient
 from datetime import datetime
@@ -14,7 +15,7 @@ class TermTableModel(QAbstractTableModel):
     def __init__(self, terms=None):
         super().__init__()
         self.terms = terms or []
-        self.headers = ["ID", "Name", "Start Date", "End Date"]
+        self.headers = ["ID", "Name", "Year"]  # Removed start and end date headers
     
     def rowCount(self, parent=QModelIndex()):
         return len(self.terms)
@@ -34,9 +35,8 @@ class TermTableModel(QAbstractTableModel):
         elif col == 1:
             return term.get('name', '')
         elif col == 2:
-            return term.get('start_date', '')
-        elif col == 3:
-            return term.get('end_date', '')
+            return term.get('year', '')
+        # Removed columns for start_date and end_date
         
         return None
     
@@ -76,18 +76,19 @@ class TermManagementView(QWidget):
         # Term input form
         form_layout = QFormLayout()
         
-        self.term_name_input = QLineEdit()
-        form_layout.addRow("Term Name:", self.term_name_input)
+        # Term type dropdown
+        self.term_type_dropdown = QComboBox()
+        self.term_type_dropdown.addItems(["Winter", "Spring", "Summer"])
+        form_layout.addRow("Term Type:", self.term_type_dropdown)
         
-        self.start_date_input = QDateEdit()
-        self.start_date_input.setCalendarPopup(True)
-        self.start_date_input.setDate(QDate.currentDate())
-        form_layout.addRow("Start Date:", self.start_date_input)
+        # Year input
+        self.year_input = QLineEdit()
+        # Set default to current year
+        current_year = str(datetime.now().year)
+        self.year_input.setText(current_year)
+        form_layout.addRow("Year:", self.year_input)
         
-        self.end_date_input = QDateEdit()
-        self.end_date_input.setCalendarPopup(True)
-        self.end_date_input.setDate(QDate.currentDate().addMonths(3))
-        form_layout.addRow("End Date:", self.end_date_input)
+        # Removed start_date and end_date inputs
         
         button_layout = QHBoxLayout()
         self.add_term_button = QPushButton("Add Term")
@@ -128,27 +129,23 @@ class TermManagementView(QWidget):
     
     def add_term(self):
         """Handle adding a new term"""
-        name = self.term_name_input.text().strip()
-        start_date = self.start_date_input.date().toString("yyyy-MM-dd")
-        end_date = self.end_date_input.date().toString("yyyy-MM-dd")
+        term_type = self.term_type_dropdown.currentText()
+        year = self.year_input.text().strip()
         
-        if not name:
-            QMessageBox.warning(self, "Input Error", "Please enter a term name.")
+        if not year:
+            QMessageBox.warning(self, "Input Error", "Please enter a year.")
             return
         
-        if self.start_date_input.date() >= self.end_date_input.date():
-            QMessageBox.warning(self, "Date Error", "End date must be after start date.")
-            return
+        # Removed date validation since we no longer have date fields
         
         try:
             # Generate a unique term ID
             term_id = str(uuid.uuid4())
             
-            # Create the term in Firebase
+            # Create term in Firebase with only name and year
             term_data = {
-                "name": name,
-                "start_date": start_date,
-                "end_date": end_date
+                "name": term_type,
+                "year": year
             }
             
             self.firebase.create_document("terms", term_id, term_data)
@@ -208,6 +205,7 @@ class TermManagementView(QWidget):
     
     def clear_form(self):
         """Clear the input form"""
-        self.term_name_input.clear()
-        self.start_date_input.setDate(QDate.currentDate())
-        self.end_date_input.setDate(QDate.currentDate().addMonths(3))
+        # Reset to first term type (Winter)
+        self.term_type_dropdown.setCurrentIndex(0)
+        # Reset year to current year
+        self.year_input.setText(str(datetime.now().year))

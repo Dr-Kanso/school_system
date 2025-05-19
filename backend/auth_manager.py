@@ -73,3 +73,9 @@ class AuthManager:
             return False, None, None, f"Network error: {str(e)}"
         except json.JSONDecodeError:
             return False, None, None, "Invalid response from server"
+    
+    def clear_auth_state(self):
+        """Clear the authentication state"""
+        self.id_token = None
+        self.user_uid = None
+        return True

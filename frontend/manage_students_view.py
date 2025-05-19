@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QTableView,
     QHBoxLayout, QFormLayout, QLineEdit, QMessageBox, QComboBox,
-    QCheckBox
+    QCheckBox, QGroupBox
 )
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel
 from PySide6.QtGui import QFont
@@ -119,26 +119,18 @@ class ManageStudentsView(QWidget):
         self.year_group_dropdown.addItems(["Y7", "Y8", "Y9", "Y10", "Y11"])
         form_layout.addRow("Year Group:", self.year_group_dropdown)
         
-        # Subject selection with checkboxes
-        subjects_layout = QHBoxLayout()
+        # Add subject selection
+        subjects_group = QGroupBox("Subjects")
+        subjects_layout = QVBoxLayout()
         
-        self.maths_cb = QCheckBox("Maths")
-        self.maths_cb.setChecked(True)
-        subjects_layout.addWidget(self.maths_cb)
+        self.subject_checkboxes = {}
+        for subject in ["Maths", "English", "Science", "French"]:
+            checkbox = QCheckBox(subject)
+            self.subject_checkboxes[subject] = checkbox
+            subjects_layout.addWidget(checkbox)
         
-        self.english_cb = QCheckBox("English")
-        self.english_cb.setChecked(True)
-        subjects_layout.addWidget(self.english_cb)
-        
-        self.science_cb = QCheckBox("Science")
-        self.science_cb.setChecked(True)
-        subjects_layout.addWidget(self.science_cb)
-        
-        self.french_cb = QCheckBox("French")
-        self.french_cb.setChecked(True)
-        subjects_layout.addWidget(self.french_cb)
-        
-        form_layout.addRow("Subjects:", subjects_layout)
+        subjects_group.setLayout(subjects_layout)
+        form_layout.addRow("", subjects_group)
         
         button_layout = QHBoxLayout()
         self.add_student_button = QPushButton("Add Student")
@@ -210,22 +202,17 @@ class ManageStudentsView(QWidget):
         name = self.student_name_input.text().strip()
         year_group = self.year_group_dropdown.currentText()
         
-        # Collect selected subjects
-        subjects = []
-        if self.maths_cb.isChecked():
-            subjects.append("Maths")
-        if self.english_cb.isChecked():
-            subjects.append("English")
-        if self.science_cb.isChecked():
-            subjects.append("Science")
-        if self.french_cb.isChecked():
-            subjects.append("French")
+        # Get selected subjects
+        selected_subjects = []
+        for subject, checkbox in self.subject_checkboxes.items():
+            if checkbox.isChecked():
+                selected_subjects.append(subject)
         
         if not name:
             QMessageBox.warning(self, "Input Error", "Please enter a student name.")
             return
         
-        if not subjects:
+        if not selected_subjects:
             QMessageBox.warning(self, "Input Error", "Please select at least one subject.")
             return
         
@@ -237,7 +224,7 @@ class ManageStudentsView(QWidget):
             student_data = {
                 "name": name,
                 "year_group": year_group,
-                "subjects": subjects
+                "subjects": selected_subjects
             }
             
             self.firebase.create_document("students", student_id, student_data)
@@ -299,7 +286,5 @@ class ManageStudentsView(QWidget):
         """Clear the input form"""
         self.student_name_input.clear()
         self.year_group_dropdown.setCurrentIndex(0)
-        self.maths_cb.setChecked(True)
-        self.english_cb.setChecked(True)
-        self.science_cb.setChecked(True)
-        self.french_cb.setChecked(True)
+        for checkbox in self.subject_checkboxes.values():
+            checkbox.setChecked(False)

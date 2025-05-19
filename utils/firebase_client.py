@@ -47,41 +47,52 @@ class FirebaseClient:
         return fields
     
     def query_collection(self, collection_name, field, operator, value):
-        """Query a collection with a simple filter"""
-        # For REST API, we'll need to use a structured query
-        structured_query = {
-            "structuredQuery": {
-                "from": [{"collectionId": collection_name}],
-                "where": {
-                    "fieldFilter": {
-                        "field": {"fieldPath": field},
-                        "op": self._convert_operator(operator),
-                        "value": self._to_firebase_value(value)
+        """
+        Query a collection in Firebase with a filter
+        Returns: list of documents
+        """
+        try:
+            # Use the structured query format required by Firestore REST API
+            url = f"{self.base_url}:runQuery?key={self.api_key}"
+            
+            # Format the query with proper Firestore syntax
+            payload = {
+                "structuredQuery": {
+                    "from": [{"collectionId": collection_name}],
+                    "where": {
+                        "fieldFilter": {
+                            "field": {"fieldPath": field},
+                            "op": self._convert_operator(operator),
+                            "value": self._to_firebase_value(value)
+                        }
                     }
                 }
             }
-        }
-        
-        url = f"{self.base_url}:runQuery?key={self.api_key}"
-        headers = {}
-        if self.id_token:
-            headers["Authorization"] = f"Bearer {self.id_token}"
-        
-        response = requests.post(url, json=structured_query, headers=headers)
-        response.raise_for_status()
-        
-        results = response.json()
-        documents = []
-        
-        for result in results:
-            if 'document' in result:
-                doc = result['document']
-                doc_id = doc['name'].split('/')[-1]
-                fields = self._parse_fields(doc.get('fields', {}))
-                fields['id'] = doc_id
-                documents.append(fields)
-        
-        return documents
+            
+            headers = {"Content-Type": "application/json"}
+            if self.id_token:
+                headers["Authorization"] = f"Bearer {self.id_token}"
+            
+            response = requests.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            
+            # Parse the response - Firestore returns an array of document objects
+            data = response.json()
+            documents = []
+            
+            for item in data:
+                if "document" in item:
+                    doc = item["document"]
+                    doc_id = doc["name"].split("/")[-1]
+                    fields = self._parse_fields(doc.get("fields", {}))
+                    fields["id"] = doc_id
+                    documents.append(fields)
+                    
+            return documents
+            
+        except Exception as e:
+            print(f"Firebase query error: {str(e)}")
+            raise e
     
     def create_document(self, collection_name, doc_id, data):
         """Create or update a document with a specific ID"""
@@ -94,6 +105,83 @@ class FirebaseClient:
         response = requests.patch(url, json=firebase_data, headers=headers)
         response.raise_for_status()
         return response.json()
+    
+    def query_collection_with_filters(self, collection, filters):
+        """
+        Query a collection with multiple filters
+        
+        Args:
+            collection: Collection name
+            filters: List of tuples in the format (field, operator, value)
+            
+        Returns:
+            List of matching documents
+        """
+        try:
+            # Use the runQuery endpoint instead of URL parameters
+            url = f"{self.base_url}:runQuery?key={self.api_key}"
+            
+            # Build a structured query with filters
+            filter_objects = []
+            for field, op, value in filters:
+                filter_objects.append({
+                    "fieldFilter": {
+                        "field": {"fieldPath": field},
+                        "op": self._convert_operator(op),
+                        "value": self._to_firebase_value(value)
+                    }
+                })
+            
+            # Combine filters with AND logic
+            filter_section = {}
+            if len(filter_objects) == 1:
+                filter_section = filter_objects[0]
+            elif len(filter_objects) > 1:
+                filter_section = {
+                    "compositeFilter": {
+                        "op": "AND",
+                        "filters": filter_objects
+                    }
+                }
+            
+            # Construct the full query
+            payload = {
+                "structuredQuery": {
+                    "from": [{"collectionId": collection}],
+                    "where": filter_section
+                }
+            }
+            
+            # Make the request
+            headers = {"Content-Type": "application/json"}
+            if self.id_token:
+                headers["Authorization"] = f"Bearer {self.id_token}"
+                
+            response = requests.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            
+            # Parse the response
+            data = response.json()
+            
+            # Convert Firebase format to simple dictionaries
+            result = []
+            for item in data:
+                if "document" in item:
+                    doc = item["document"]
+                    doc_id = doc["name"].split("/")[-1]
+                    fields = doc.get("fields", {})
+                    
+                    # Convert Firestore field types to Python types
+                    doc_data = {"id": doc_id}
+                    doc_data.update(self._parse_fields(fields))
+                    result.append(doc_data)
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error querying collection: {str(e)}")
+            # Return empty list instead of raising to prevent UI crashes
+            return []
     
     def _convert_operator(self, operator):
         """Convert Python-style operators to Firebase operators"""

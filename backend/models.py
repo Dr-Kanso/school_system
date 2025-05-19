@@ -20,8 +20,8 @@ class Student:
 class Term:
     term_id: str
     name: str
-    start_date: datetime
-    end_date: datetime
+    year: str  # Academic year field remains
+    # start_date and end_date fields removed
 
 @dataclass
 class AttendanceRecord:

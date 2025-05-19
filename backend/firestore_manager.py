@@ -146,3 +146,86 @@ class FirestoreManager:
             return False, "", f"Network error: {str(e)}"
         except json.JSONDecodeError:
             return False, "", "Invalid response from server"
+    
+    def add_term(self, id_token, term_id, name, year):
+        """
+        Add a new academic term to Firestore
+        Returns: (success, error_message)
+        """
+        try:
+            headers = {
+                "Authorization": f"Bearer {id_token}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "fields": {
+                    "name": {"stringValue": name},
+                    "year": {"stringValue": year}
+                    # Removed start_date and end_date fields
+                }
+            }
+            
+            endpoint = self.firebase_service.get_firestore_endpoint(f"terms/{term_id}")
+            response = requests.patch(
+                endpoint,
+                headers=headers,
+                json=payload
+            )
+            
+            if response.status_code in (200, 201):
+                return True, ""
+            else:
+                error_message = f"Error adding term: {response.status_code}"
+                return False, error_message
+                
+        except requests.RequestException as e:
+            return False, f"Network error: {str(e)}"
+        except json.JSONDecodeError:
+            return False, "Invalid response from server"
+    
+    def get_terms(self, id_token, year=None):
+        """
+        Get all terms or filter by year
+        Returns: (success, terms_list, error_message)
+        """
+        try:
+            headers = {
+                "Authorization": f"Bearer {id_token}"
+            }
+            
+            endpoint = self.firebase_service.get_firestore_endpoint("terms")
+            
+            # If year filter is provided, add a query
+            if year:
+                endpoint += f'?where.field=year&where.op=EQUAL&where.value={year}'
+                
+            response = requests.get(endpoint, headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
+                documents = data.get("documents", [])
+                
+                terms = []
+                for doc in documents:
+                    doc_id = doc.get("name", "").split("/")[-1]
+                    fields = doc.get("fields", {})
+                    
+                    term = {
+                        "id": doc_id,
+                        "name": fields.get("name", {}).get("stringValue", ""),
+                        "year": fields.get("year", {}).get("stringValue", "")
+                        # Removed start_date and end_date fields
+                    }
+                    
+                    terms.append(term)
+                
+                return True, terms, ""
+            else:
+                error_message = f"Error fetching terms: {response.status_code}"
+                return False, [], error_message
+                
+        except requests.RequestException as e:
+            return False, [], f"Network error: {str(e)}"
+        except json.JSONDecodeError:
+            return False, [], "Invalid response from server"

@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QStackedWidget, QTabWidget
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 from frontend.manage_students_view import ManageStudentsView
@@ -12,6 +12,9 @@ from frontend.reports_view import ReportsView
 
 class AdminDashboard(QWidget):
     """Dashboard view for administrators"""
+    
+    # Add logout signal
+    logout_requested = Signal()
     
     def __init__(self, id_token, user_uid, name=""):
         super().__init__()
@@ -43,6 +46,7 @@ class AdminDashboard(QWidget):
         # Logout button
         self.logout_button = QPushButton("Logout")
         self.logout_button.setFixedWidth(100)
+        self.logout_button.clicked.connect(self.handle_logout)  # Connect to logout handler
         header_layout.addWidget(self.logout_button)
         
         main_layout.addLayout(header_layout)
@@ -65,3 +69,7 @@ class AdminDashboard(QWidget):
         main_layout.addWidget(self.tab_widget)
         
         self.setLayout(main_layout)
+    
+    def handle_logout(self):
+        """Handle logout button click"""
+        self.logout_requested.emit()
