@@ -1,11 +1,17 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QTableView,
     QHBoxLayout, QComboBox, QMessageBox, QGroupBox, 
-    QHeaderView, QTableWidget, QTableWidgetItem
+    QHeaderView, QTableWidget, QTableWidgetItem, QFileDialog
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont, QColor
 from utils.firebase_client import FirebaseClient
+from docx import Document
+from docx.shared import Pt, Inches, RGBColor, Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
 class ReportsView(QWidget):
     """View for generating and viewing student performance reports"""
@@ -79,15 +85,15 @@ class ReportsView(QWidget):
         self.student_info_label = QLabel("")
         report_display_layout.addWidget(self.student_info_label)
         
-        # Report table
+        # Report table - change to 2 columns (remove teacher column)
         self.report_table = QTableWidget()
-        self.report_table.setColumnCount(3)
-        self.report_table.setHorizontalHeaderLabels(["Subject", "Grade", "Teacher"])
+        self.report_table.setColumnCount(2)  # Changed from 3 to 2
+        self.report_table.setHorizontalHeaderLabels(["Subject", "Grade"])  # Removed "Teacher"
         self.report_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         report_display_layout.addWidget(self.report_table)
         
-        # Export button
-        self.export_button = QPushButton("Export to PDF")
+        # Export button - change label to Export to DOCX
+        self.export_button = QPushButton("Export to DOCX")
         self.export_button.clicked.connect(self.export_report)
         report_display_layout.addWidget(self.export_button)
         
@@ -233,13 +239,10 @@ class ReportsView(QWidget):
                 if student_id in student_results:
                     subject = result.get('subject', 'Unknown')
                     grade = student_results[student_id]
-                    teacher_id = result.get('teacher_id', '')
-                    teacher_name = self.get_teacher_name(teacher_id)
                     
                     student_grades.append({
                         'subject': subject,
-                        'grade': grade,
-                        'teacher': teacher_name
+                        'grade': grade
                     })
             
             # Sort by subject name
@@ -249,10 +252,9 @@ class ReportsView(QWidget):
             for i, grade_info in enumerate(student_grades):
                 self.report_table.insertRow(i)
                 
-                # Set table cells
+                # Set table cells - just subject and grade, no teacher column
                 self.report_table.setItem(i, 0, QTableWidgetItem(grade_info['subject']))
                 self.report_table.setItem(i, 1, QTableWidgetItem(grade_info['grade']))
-                self.report_table.setItem(i, 2, QTableWidgetItem(grade_info['teacher']))
             
             # Optionally, fetch attendance data as well if we want to show percentage
             self.load_attendance_data(student_id, year_group, term_id)
@@ -286,44 +288,213 @@ class ReportsView(QWidget):
         except Exception as e:
             print(f"Error loading attendance data: {str(e)}")
     
-    def get_teacher_name(self, teacher_id):
-        """Get teacher name from user ID"""
-        if not teacher_id:
-            return "Unknown"
-        
-        try:
-            # Cache teacher names to avoid repeated lookups
-            if not hasattr(self, 'teacher_cache'):
-                self.teacher_cache = {}
-                
-            if teacher_id in self.teacher_cache:
-                return self.teacher_cache[teacher_id]
-                
-            # Look up teacher in users collection
-            teacher = self.firebase.get_document("users", teacher_id)
-            
-            if teacher and 'name' in teacher:
-                name = teacher['name']
-                self.teacher_cache[teacher_id] = name
-                return name
-            else:
-                return "Unknown"
-                
-        except Exception as e:
-            print(f"Error getting teacher name: {str(e)}")
-            return "Unknown"
-    
     def export_report(self):
-        """Export the current report to PDF"""
+        """Export the current report to DOCX with enhanced styling"""
         if self.report_table.rowCount() == 0:
             QMessageBox.warning(self, "No Data", "There is no report data to export.")
             return
             
-        # For now, just show a message
-        QMessageBox.information(
-            self,
-            "Export Feature", 
-            "PDF export will be implemented in the next version."
-        )
+        try:
+            # Get file save location from user
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Save Report as DOCX", "", "Word Documents (*.docx)"
+            )
+            
+            if not file_path:  # User canceled the dialog
+                return
+                
+            # Add .docx extension if not present
+            if not file_path.lower().endswith(".docx"):
+                file_path += ".docx"
+                
+            # Parse the student info from the label text
+            student_info = self.student_info_label.text()
+            
+            # Create a new Word document with custom page margins
+            doc = Document()
+            sections = doc.sections
+            for section in sections:
+                section.top_margin = Cm(2)
+                section.bottom_margin = Cm(2)
+                section.left_margin = Cm(2.5)
+                section.right_margin = Cm(2.5)
+            
+            # Add a title with custom formatting
+            title = doc.add_heading('Student Performance Report', level=1)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Apply custom font size and bold to the title run
+            title_run = title.runs[0]
+            title_run.font.size = Pt(18)
+            title_run.font.color.rgb = RGBColor(0, 51, 102)  # Navy blue color
+            
+            # Add a horizontal line for visual separation
+            self._add_horizontal_line(doc)
+            
+            # Extract student name, year group, and term from the info text
+            student_parts = student_info.replace('<b>', '').replace('</b>', '').split('|')
+            student_name = student_parts[0].split(':')[1].strip() if len(student_parts) > 0 else "Unknown"
+            year_group = student_parts[1].split(':')[1].strip() if len(student_parts) > 1 else "Unknown"
+            term_name = student_parts[2].split(':')[1].strip() if len(student_parts) > 2 else "Unknown"
+            
+            # Add styled student information
+            student_info_para = doc.add_paragraph()
+            student_info_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            student_info_para.space_after = Pt(6)
+            
+            # Add each piece of student info with proper styling
+            self._add_styled_text(student_info_para, "Student: ", 'bold')
+            self._add_styled_text(student_info_para, f"{student_name}", 'normal')
+            student_info_para.add_run(" | ")
+            self._add_styled_text(student_info_para, "Year Group: ", 'bold')  
+            self._add_styled_text(student_info_para, f"{year_group}", 'normal')
+            student_info_para.add_run(" | ")
+            self._add_styled_text(student_info_para, "Term: ", 'bold')
+            self._add_styled_text(student_info_para, f"{term_name}", 'normal')
+            
+            # Add spacer
+            doc.add_paragraph()
+            
+            # Add a table for the report data with custom styling
+            table = doc.add_table(rows=1, cols=2)
+            table.style = 'Table Grid'
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            
+            # Set table width to 80% of page width
+            table.autofit = False
+            table.width = Inches(6)
+            
+            # Style the header row with background color
+            header_cells = table.rows[0].cells
+            for cell in header_cells:
+                cell_shading = OxmlElement('w:shd')
+                cell_shading.set(qn('w:fill'), "D0E0E3")  # Light blue background
+                cell._tc.get_or_add_tcPr().append(cell_shading)
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            
+            # Add table headers with bold formatting
+            header_cells[0].text = ''  # Clear default text
+            header_cells[1].text = ''
+            
+            # Add styled header text
+            header_para0 = header_cells[0].paragraphs[0]
+            header_para0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            header_run0 = header_para0.add_run('Subject')
+            header_run0.bold = True
+            header_run0.font.size = Pt(12)
+            
+            header_para1 = header_cells[1].paragraphs[0]
+            header_para1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            header_run1 = header_para1.add_run('Grade')
+            header_run1.bold = True
+            header_run1.font.size = Pt(12)
+            
+            # Add data rows
+            for row in range(self.report_table.rowCount()):
+                cells = table.add_row().cells
+                
+                # Get cell values
+                subject = self.report_table.item(row, 0).text()
+                grade = self.report_table.item(row, 1).text()
+                
+                # Clear default cell text
+                cells[0].text = ''
+                cells[1].text = ''
+                
+                # Add styled subject text
+                subject_para = cells[0].paragraphs[0]
+                subject_run = subject_para.add_run(subject)
+                subject_run.font.size = Pt(11)
+                
+                # Add styled grade text with centered alignment
+                grade_para = cells[1].paragraphs[0]
+                grade_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                grade_run = grade_para.add_run(grade)
+                grade_run.font.size = Pt(11)
+                grade_run.bold = True
+                
+                # Add different background colors based on grade value
+                # This is an example - you can customize the coloring logic
+                try:
+                    grade_value = int(grade)
+                    cell_shading = OxmlElement('w:shd')
+                    
+                    # Color coding by grade
+                    if grade_value >= 7:
+                        cell_shading.set(qn('w:fill'), "C6E0B4")  # Light green for high grades
+                    elif grade_value >= 4:
+                        cell_shading.set(qn('w:fill'), "FFFFFF")  # White for medium grades
+                    else:
+                        cell_shading.set(qn('w:fill'), "F8CBAD")  # Light red for low grades
+                        
+                    cells[1]._tc.get_or_add_tcPr().append(cell_shading)
+                except (ValueError, TypeError):
+                    # For non-numeric grades, don't add special coloring
+                    pass
+            
+            # Apply alternating row colors to improve readability
+            for i, row in enumerate(table.rows):
+                if i > 0 and i % 2 == 0:  # Skip header row and apply to every other row
+                    for cell in row.cells:
+                        cell_shading = OxmlElement('w:shd')
+                        cell_shading.set(qn('w:fill'), "F5F5F5")  # Light gray background
+                        cell._tc.get_or_add_tcPr().append(cell_shading)
+            
+            # Add spacing before the generated date
+            doc.add_paragraph()
+            
+            # Add generated date with proper italic formatting
+            current_date = QDate.currentDate().toString("ddd MMM d yyyy")
+            date_paragraph = doc.add_paragraph()
+            date_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            date_run = date_paragraph.add_run(f"Generated on {current_date}")
+            date_run.italic = True
+            date_run.font.size = Pt(9)
+            date_run.font.color.rgb = RGBColor(128, 128, 128)  # Gray text
+            
+            # Save the document
+            doc.save(file_path)
+            
+            QMessageBox.information(
+                self, 
+                "Export Successful", 
+                f"Report has been exported to:\n{file_path}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export report: {str(e)}")
+            print(f"Error during export: {str(e)}")
+
+    def _add_horizontal_line(self, doc):
+        """Add a horizontal line to the document"""
+        paragraph = doc.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = paragraph.add_run()
+        run.add_break()
         
-        # Full implementation would use a PDF library like reportlab or QtPrintSupport
+        # Add a horizontal line using a border on a paragraph
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_fmt = p.paragraph_format
+        p_fmt.space_before = Pt(0)
+        p_fmt.space_after = Pt(12)
+        
+        # Add bottom border to this paragraph
+        border = OxmlElement('w:pBdr')
+        bottom = OxmlElement('w:bottom')
+        bottom.set(qn('w:val'), 'single')
+        bottom.set(qn('w:sz'), '4')
+        bottom.set(qn('w:space'), '0')
+        bottom.set(qn('w:color'), '4F81BD')  # Blue line
+        border.append(bottom)
+        p._p.get_or_add_pPr().append(border)
+
+    def _add_styled_text(self, paragraph, text, style):
+        """Add text with the specified style to a paragraph"""
+        run = paragraph.add_run(text)
+        
+        if style == 'bold':
+            run.bold = True
+            run.font.size = Pt(11)
+        elif style == 'normal':
+            run.font.size = Pt(11)
+        
+        return run

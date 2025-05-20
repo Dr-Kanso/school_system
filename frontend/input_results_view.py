@@ -225,9 +225,10 @@ class InputResultsView(QWidget):
         
         self.setLayout(main_layout)
         
-        # Connect signals for subject and year group changes
+        # Connect signals for subject, year group, and term changes
         self.subject_selector.currentTextChanged.connect(self.onSubjectChanged)
         self.year_group_selector.currentTextChanged.connect(self.onYearGroupChanged)
+        self.term_dropdown.currentIndexChanged.connect(self.onTermChanged)
     
     def loadTerms(self):
         """Load academic terms from Firebase"""
@@ -284,10 +285,6 @@ class InputResultsView(QWidget):
             # Update the subject selector
             self.updateSubjectSelector()
             
-            # Auto-select first subject if available
-            if self.subject_selector.count() > 1:
-                self.subject_selector.setCurrentIndex(1)
-                
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to load teacher assignments: {str(e)}")
             print(f"Exception in loadTeacherAssignments: {str(e)}")
@@ -361,10 +358,6 @@ class InputResultsView(QWidget):
         for year_group in self.standard_year_groups:
             if year_group in assigned_year_groups:
                 self.year_group_selector.addItem(year_group, year_group)
-        
-        # Auto-select first year group if available
-        if self.year_group_selector.count() > 1:
-            self.year_group_selector.setCurrentIndex(1)
     
     def onSubjectChanged(self, subject):
         """Handle subject selection change"""
@@ -373,28 +366,83 @@ class InputResultsView(QWidget):
             self.updateYearGroupSelector(subject)
             # Clear any previously loaded students
             self.results_model.update_students([])
-            # Try to load students immediately if a year group is already selected
-            if self.year_group_selector.currentData():
-                self.load_students()
 
     def onYearGroupChanged(self, year_group):
         """Handle year group selection change"""
-        # If a year group is selected and a subject is selected, load students
-        if (year_group and self.year_group_selector.currentData() and 
-            self.subject_selector.currentData()):
-            self.load_students()
+        pass
 
+    def onTermChanged(self, index):
+        """Handle term selection change"""
+        # Skip if no valid selection or if required fields aren't selected
+        if index <= 0 or not self.subject_selector.currentData() or not self.year_group_selector.currentData():
+            return
+            
+        subject = self.subject_selector.currentData()
+        year_group = self.year_group_selector.currentData()
+        term_id = self.term_dropdown.currentData()
+        term_name = self.term_dropdown.currentText()
+        
+        # Check if results already exist for this combination
+        existing_results = self.check_existing_results(subject, year_group, term_id)
+        
+        if existing_results:
+            # Inform user that results exist and will be loaded
+            QMessageBox.information(
+                self,
+                "Existing Results Found",
+                f"Results have already been saved for {subject} {year_group} in {term_name}. "
+                "These will be loaded for viewing or updating."
+            )
+            
+            # Update the model with the existing results
+            if self.results_model.students:
+                self.results_model.set_existing_results(existing_results)
+        else:
+            # Reset all grades to "1" since no existing results
+            self.results_model.results = {}  # Clear any existing results
+            
+            # Initialize with default grade "1" for each student
+            for student in self.results_model.students:
+                student_id = student.get('id', '')
+                if student_id:
+                    self.results_model.results[student_id] = "1"
+                    
+            # Refresh the table display
+            if self.results_model.students:
+                self.results_model.dataChanged.emit(
+                    self.results_model.index(0, 3),
+                    self.results_model.index(self.results_model.rowCount()-1, 3)
+                )
+    
+    def check_existing_results(self, subject, year_group, term_id):
+        """Check if results exist for the given subject, year group and term"""
+        if not subject or not year_group or not term_id:
+            return None
+            
+        try:
+            # Format a document ID for results using the same format as in save_results
+            results_doc_id = f"{term_id}_{year_group}_{subject}"
+            results_data = self.firebase.get_document("results", results_doc_id)
+            
+            if results_data and "student_results" in results_data:
+                return results_data["student_results"]
+                
+        except Exception as e:
+            print(f"Error checking existing results: {str(e)}")
+            
+        return None
+    
     def load_students(self):
         """Handle loading students for selected subject and year group"""
         subject = self.subject_selector.currentData()
         year_group = self.year_group_selector.currentData()
         
         if not subject or subject == "":
-            # Don't show warning when called automatically
+            QMessageBox.warning(self, "Selection Error", "Please select a subject.")
             return
             
         if not year_group or year_group == "":
-            # Don't show warning when called automatically
+            QMessageBox.warning(self, "Selection Error", "Please select a year group.")
             return
             
         # Note: term is not required for loading students, only for saving results
@@ -402,8 +450,6 @@ class InputResultsView(QWidget):
         term_display = self.term_dropdown.currentText()
         
         try:
-            # Clear any existing data in the results table
-            
             # Standardize year group format for querying
             standardized_year_group = year_group.strip().upper()
             if standardized_year_group not in self.standard_year_groups:
@@ -464,18 +510,8 @@ class InputResultsView(QWidget):
                 QMessageBox.information(self, "No Students", f"No students found in {year_group} taking {subject}")
                 return
                 
-            # Load any existing results if a term is selected
-            existing_results = {}
-            if term_id:
-                try:
-                    # Format a document ID for results
-                    results_doc_id = f"{term_id}_{year_group}_{subject}"
-                    results_data = self.firebase.get_document("results", results_doc_id)
-                    if results_data and "student_results" in results_data:
-                        existing_results = results_data["student_results"]
-                    print(f"Loaded existing results for term: {term_display}")
-                except Exception as e:
-                    print(f"No existing results found: {str(e)}")
+            # Check for existing results using our helper method
+            existing_results = self.check_existing_results(subject, year_group, term_id)
             
             # Update the results model with the filtered students
             self.results_model.update_students(filtered_students)
@@ -483,16 +519,21 @@ class InputResultsView(QWidget):
             # Load existing results if available
             if existing_results:
                 self.results_model.set_existing_results(existing_results)
-            
-            # Only show success message when button is clicked, not during auto-loading
-            if sender := self.sender():
-                if sender == self.load_button:
-                    if term_id:
-                        QMessageBox.information(self, "Students Loaded", 
-                                              f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\nSelected term: {term_display}\n\nYou can now enter or update their results.")
-                    else:
-                        QMessageBox.information(self, "Students Loaded", 
-                                              f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\nPlease select a term before saving results.")
+                # Inform the user we're loading saved results
+                QMessageBox.information(
+                    self, 
+                    "Existing Results Loaded", 
+                    f"Previously saved results for {subject}, {year_group} in {term_display} have been loaded."
+                )
+            else:
+                # Otherwise, the update_students method will have set default grade "1"
+                QMessageBox.information(
+                    self, 
+                    "Students Loaded", 
+                    f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\n"
+                    f"No existing results found for {term_display if term_id else 'the selected term'}.\n\n"
+                    "Default grades of '1' have been applied. Adjust as needed and save."
+                )
             
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to load students: {str(e)}")

@@ -109,9 +109,9 @@ class AttendanceRegisterView(QWidget):
             # Update the subject selector
             self.updateSubjectSelector()
             
-            # Auto-select first subject if available
-            if self.subject_selector.count() > 1:
-                self.subject_selector.setCurrentIndex(1)
+            # Remove auto-selection of first subject
+            # if self.subject_selector.count() > 1:
+            #     self.subject_selector.setCurrentIndex(1)
                 
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to load teacher assignments: {str(e)}")
@@ -197,14 +197,15 @@ class AttendanceRegisterView(QWidget):
             self.updateYearGroupSelector(subject)
             # Clear any previously loaded students
             self.attendance_table.setRowCount(0)
-            # Try to load students immediately if a year group is already selected
-            if self.year_group_selector.currentData():
-                self.loadStudents()
+            # Don't auto-load students anymore
+            # if self.year_group_selector.currentData():
+            #     self.loadStudents()
     
     def onYearGroupChanged(self, year_group):
-        # If a year group is selected, reload students with filter
-        if self.year_group_selector.currentData():
-            self.loadStudents()
+        # Don't auto-load students on year group change
+        # if self.year_group_selector.currentData():
+        #     self.loadStudents()
+        pass
     
     def loadStudents(self):
         # Load students based on subject and year group
