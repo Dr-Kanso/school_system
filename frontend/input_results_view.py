@@ -8,15 +8,15 @@ from PySide6.QtGui import QFont
 from utils.firebase_client import FirebaseClient
 
 class GradeDelegate(QStyledItemDelegate):
-    """Delegate for grade column in results table to provide a dropdown"""
+    """Delegate for grade columns in results table to provide dropdowns"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.grades = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
     
     def createEditor(self, parent, option, index):
-        """Create dropdown editor for the grade column"""
-        if index.column() == 3:  # Grade column
+        """Create dropdown editor for grade columns"""
+        if index.column() >= 3 and index.column() <= 7:  # All grade columns
             editor = QComboBox(parent)
             editor.addItems(self.grades)
             return editor
@@ -24,7 +24,7 @@ class GradeDelegate(QStyledItemDelegate):
     
     def setEditorData(self, editor, index):
         """Set the editor data based on the model"""
-        if index.column() == 3 and isinstance(editor, QComboBox):
+        if index.column() >= 3 and index.column() <= 7 and isinstance(editor, QComboBox):
             value = index.model().data(index, Qt.DisplayRole)
             if value in self.grades:
                 idx = self.grades.index(value)
@@ -36,7 +36,7 @@ class GradeDelegate(QStyledItemDelegate):
     
     def setModelData(self, editor, model, index):
         """Update the model with data from the editor"""
-        if index.column() == 3 and isinstance(editor, QComboBox):
+        if index.column() >= 3 and index.column() <= 7 and isinstance(editor, QComboBox):
             model.setData(index, editor.currentText(), Qt.EditRole)
         else:
             super().setModelData(editor, model, index)
@@ -47,10 +47,19 @@ class ResultsTableModel(QAbstractTableModel):
     def __init__(self, students=None):
         super().__init__()
         self.students = students or []
-        self.headers = ["ID", "Name", "Year Group", "Grade"]
+        self.headers = ["ID", "Name", "Year Group", "Current Grade", "Target Grade", "Homework", "Behaviour", "Punctuality"]
         self.grades = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]  # Numeric grades
-        self.results = {}  # Dictionary to store student results: {student_id: grade}
         
+        # Clear all previous results to avoid data from previous subjects interfering
+        self.results = {}
+        
+        # Initialize default grade of "1" for every student for all categories
+        categories = ["current_grade", "target_grade", "homework", "behaviour", "punctuality"]
+        for student in self.students:
+            student_id = student.get('id', '')
+            if student_id:
+                self.results[student_id] = {category: "1" for category in categories}
+    
     def rowCount(self, parent=QModelIndex()):
         return len(self.students)
     
@@ -80,9 +89,12 @@ class ResultsTableModel(QAbstractTableModel):
                     return student.get('name', '')
             elif col == 2:
                 return student.get('year_group', '')
-            elif col == 3:
+            elif col >= 3 and col <= 7:  # Grade columns
                 student_id = student.get('id', '')
-                return self.results.get(student_id, '')
+                if student_id in self.results:
+                    category = self._get_category_for_column(col)
+                    return self.results[student_id].get(category, "1")
+                return "1"  # Default grade
                 
         # Store student ID in user role for reference
         if role == Qt.UserRole:
@@ -91,12 +103,19 @@ class ResultsTableModel(QAbstractTableModel):
         return None
     
     def setData(self, index, value, role=Qt.EditRole):
-        if not index.isValid() or index.column() != 3:
+        if not index.isValid() or index.column() < 3 or index.column() > 7:
             return False
             
         if role == Qt.EditRole:
             student_id = self.students[index.row()].get('id', '')
-            self.results[student_id] = value
+            category = self._get_category_for_column(index.column())
+            
+            # Initialize student record if it doesn't exist
+            if student_id not in self.results:
+                self.results[student_id] = {}
+                
+            # Set the value for the specific category
+            self.results[student_id][category] = value
             self.dataChanged.emit(index, index)
             return True
             
@@ -106,8 +125,8 @@ class ResultsTableModel(QAbstractTableModel):
         if not index.isValid():
             return Qt.NoItemFlags
             
-        # Make only the grade column editable
-        if index.column() == 3:
+        # Make only the grade columns editable
+        if index.column() >= 3 and index.column() <= 7:
             return Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable
             
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable
@@ -125,31 +144,69 @@ class ResultsTableModel(QAbstractTableModel):
         # Clear all previous results to avoid data from previous subjects interfering
         self.results = {}
         
-        # Initialize default grade of "1" for every student
+        # Initialize default grade of "1" for every student for all categories
+        categories = ["current_grade", "target_grade", "homework", "behaviour", "punctuality"]
         for student in self.students:
             student_id = student.get('id', '')
             if student_id:
-                self.results[student_id] = "1"
+                self.results[student_id] = {category: "1" for category in categories}
                 
         self.endResetModel()
     
     def set_existing_results(self, results_data):
         """Load existing results data and reset missing grades to 1"""
+        # Initialize with defaults for all students
+        categories = ["current_grade", "target_grade", "homework", "behaviour", "punctuality"]
         self.results = {}
+        
         for student in self.students:
             student_id = student.get('id', '')
-            if student_id in results_data:
-                self.results[student_id] = results_data[student_id]
-            else:
-                self.results[student_id] = "1"
+            if student_id:
+                # Initialize with default grades
+                self.results[student_id] = {category: "1" for category in categories}
+                
+                # Update with existing data if available
+                if student_id in results_data:
+                    student_results = results_data[student_id]
+                    # Handle both the old format (string) and new format (dict)
+                    if isinstance(student_results, str):
+                        # Legacy format - just the achievement/current_grade
+                        self.results[student_id]["current_grade"] = student_results
+                    elif isinstance(student_results, dict):
+                        # New format - copy all available categories
+                        # Handle legacy category names
+                        if "achievement" in student_results:
+                            self.results[student_id]["current_grade"] = student_results["achievement"]
+                        if "target" in student_results:
+                            self.results[student_id]["target_grade"] = student_results["target"]
+                        
+                        # Also handle current naming if present
+                        for category in categories:
+                            if category in student_results:
+                                self.results[student_id][category] = student_results[category]
+                
         self.dataChanged.emit(
             self.index(0, 3), 
-            self.index(self.rowCount()-1, 3)
+            self.index(self.rowCount()-1, 7)
         )
     
     def get_results(self):
         """Return the current results dictionary"""
         return self.results
+    
+    def _get_category_for_column(self, column):
+        """Map column index to category name"""
+        if column == 3:
+            return "current_grade"  # Changed from "achievement"
+        elif column == 4:
+            return "target_grade"   # Changed from "target"
+        elif column == 5:
+            return "homework"
+        elif column == 6:
+            return "behaviour"
+        elif column == 7:
+            return "punctuality"
+        return None
 
 class InputResultsView(QWidget):
     """View for inputting student results"""
@@ -220,9 +277,13 @@ class InputResultsView(QWidget):
         self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.results_table.setSelectionBehavior(QTableView.SelectRows)
         
-        # Add the grade delegate for dropdown selection
+        # Add the grade delegate for all grade columns
         grade_delegate = GradeDelegate(self.results_table)
-        self.results_table.setItemDelegateForColumn(3, grade_delegate)
+        for col in range(3, 8):  # Columns 3-7 are grade columns
+            self.results_table.setItemDelegateForColumn(col, grade_delegate)
+        
+        # Make the table wider to accommodate more columns
+        self.results_table.setMinimumWidth(800)
         
         main_layout.addWidget(self.results_table)
         
@@ -420,13 +481,17 @@ class InputResultsView(QWidget):
             for student in self.results_model.students:
                 student_id = student.get('id', '')
                 if student_id:
-                    self.results_model.results[student_id] = "1"
+                    self.results_model.results[student_id] = {
+                        category: "1" for category in [
+                            "current_grade", "target_grade", "homework", "behaviour", "punctuality"
+                        ]
+                    }
                     
             # Refresh the table display
             if self.results_model.students:
                 self.results_model.dataChanged.emit(
                     self.results_model.index(0, 3),
-                    self.results_model.index(self.results_model.rowCount()-1, 3)
+                    self.results_model.index(self.results_model.rowCount()-1, 7)
                 )
     
     def check_existing_results(self, subject, year_group, term_id):

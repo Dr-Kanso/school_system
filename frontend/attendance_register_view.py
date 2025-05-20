@@ -192,14 +192,12 @@ class AttendanceRegisterView(QWidget):
             self.year_group_selector.setCurrentIndex(1)
     
     def onSubjectChanged(self, subject):
+        """Handle subject selection change to work with all subject types"""
         if self.subject_selector.currentData():
             # Update year group selector for this subject
             self.updateYearGroupSelector(subject)
             # Clear any previously loaded students
             self.attendance_table.setRowCount(0)
-            # Don't auto-load students anymore
-            # if self.year_group_selector.currentData():
-            #     self.loadStudents()
     
     def onYearGroupChanged(self, year_group):
         # Don't auto-load students on year group change

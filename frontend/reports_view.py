@@ -85,10 +85,12 @@ class ReportsView(QWidget):
         self.student_info_label = QLabel("")
         report_display_layout.addWidget(self.student_info_label)
         
-        # Report table - change to 2 columns (remove teacher column)
+        # Report table - update headers to match input_results_view
         self.report_table = QTableWidget()
-        self.report_table.setColumnCount(2)  # Changed from 3 to 2
-        self.report_table.setHorizontalHeaderLabels(["Subject", "Grade"])  # Removed "Teacher"
+        self.report_table.setColumnCount(6)  # Subject + 5 grade categories
+        self.report_table.setHorizontalHeaderLabels([
+            "Subject", "Current Grade", "Target Grade", "Homework", "Behaviour", "Punctuality"
+        ])
         self.report_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         report_display_layout.addWidget(self.report_table)
         
@@ -238,11 +240,35 @@ class ReportsView(QWidget):
                 student_results = result.get('student_results', {})
                 if student_id in student_results:
                     subject = result.get('subject', 'Unknown')
-                    grade = student_results[student_id]
+                    grades_data = student_results[student_id]
                     
+                    # Handle both old format (string) and new format (dict)
+                    grades = {
+                        "current_grade": "",
+                        "target_grade": "", 
+                        "homework": "", 
+                        "behaviour": "", 
+                        "punctuality": ""
+                    }
+                    
+                    if isinstance(grades_data, str):
+                        # Legacy format - just contains achievement/current grade
+                        grades["current_grade"] = grades_data
+                    elif isinstance(grades_data, dict):
+                        # Handle both old and new category names
+                        if "achievement" in grades_data:
+                            grades["current_grade"] = grades_data["achievement"]
+                        if "target" in grades_data:
+                            grades["target_grade"] = grades_data["target"]
+                        
+                        # Handle current naming convention
+                        for category in grades.keys():
+                            if category in grades_data:
+                                grades[category] = grades_data[category]
+                                
                     student_grades.append({
                         'subject': subject,
-                        'grade': grade
+                        'grades': grades
                     })
             
             # Sort by subject name
@@ -252,9 +278,35 @@ class ReportsView(QWidget):
             for i, grade_info in enumerate(student_grades):
                 self.report_table.insertRow(i)
                 
-                # Set table cells - just subject and grade, no teacher column
-                self.report_table.setItem(i, 0, QTableWidgetItem(grade_info['subject']))
-                self.report_table.setItem(i, 1, QTableWidgetItem(grade_info['grade']))
+                # Get the subject and grades
+                subject = grade_info['subject']
+                grades = grade_info['grades']
+                
+                # Set the subject cell
+                self.report_table.setItem(i, 0, QTableWidgetItem(subject))
+                
+                # Set the grade cells for each category using updated category names
+                categories = ["current_grade", "target_grade", "homework", "behaviour", "punctuality"]
+                for j, category in enumerate(categories):
+                    value = grades.get(category, "")
+                    item = QTableWidgetItem(value)
+                    item.setTextAlignment(Qt.AlignCenter)
+                    
+                    # Apply color formatting based on grade value - apply consistent color logic
+                    try:
+                        grade_val = int(value)
+                        if grade_val >= 7:  # High Achievement (7-9)
+                            item.setBackground(QColor(198, 224, 180))  # Light green
+                        elif grade_val >= 4:  # Satisfactory Achievement (4-6)
+                            # Leave default/white background
+                            pass
+                        else:  # Needs Improvement (1-3)
+                            item.setBackground(QColor(248, 203, 173))  # Light red
+                    except (ValueError, TypeError):
+                        # No color for empty or non-numeric grades
+                        pass
+                        
+                    self.report_table.setItem(i, j + 1, item)
             
             # Optionally, fetch attendance data as well if we want to show percentage
             self.load_attendance_data(student_id, year_group, term_id)
@@ -379,11 +431,11 @@ class ReportsView(QWidget):
             doc.add_paragraph()
             
             # Add a table for the report data with custom styling
-            table = doc.add_table(rows=1, cols=2)
+            table = doc.add_table(rows=1, cols=6)  # Subject + 5 grade columns
             table.style = 'Table Grid'
             table.alignment = WD_TABLE_ALIGNMENT.CENTER
             
-            # Set table width to 80% of page width
+            # Set table width
             table.autofit = False
             table.width = Inches(6)
             
@@ -395,64 +447,54 @@ class ReportsView(QWidget):
                 cell._tc.get_or_add_tcPr().append(cell_shading)
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             
-            # Add table headers with bold formatting
-            header_cells[0].text = ''  # Clear default text
-            header_cells[1].text = ''
-            
-            # Add styled header text
-            header_para0 = header_cells[0].paragraphs[0]
-            header_para0.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            header_run0 = header_para0.add_run('Subject')
-            header_run0.bold = True
-            header_run0.font.size = Pt(12)
-            
-            header_para1 = header_cells[1].paragraphs[0]
-            header_para1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            header_run1 = header_para1.add_run('Grade')
-            header_run1.bold = True
-            header_run1.font.size = Pt(12)
+            # Add table headers with consistent naming
+            headers = ["Subject", "Current Grade", "Target Grade", "Homework", "Behaviour", "Punctuality"]
+            for i, header_text in enumerate(headers):
+                header_cells[i].text = ''  # Clear default text
+                header_para = header_cells[i].paragraphs[0]
+                header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                header_run = header_para.add_run(header_text)
+                header_run.bold = True
+                header_run.font.size = Pt(11)
             
             # Add data rows
             for row in range(self.report_table.rowCount()):
                 cells = table.add_row().cells
                 
-                # Get cell values
+                # Add subject
                 subject = self.report_table.item(row, 0).text()
-                grade = self.report_table.item(row, 1).text()
-                
-                # Clear default cell text
                 cells[0].text = ''
-                cells[1].text = ''
-                
-                # Add styled subject text
                 subject_para = cells[0].paragraphs[0]
                 subject_run = subject_para.add_run(subject)
                 subject_run.font.size = Pt(11)
                 
-                # Add styled grade text with centered alignment
-                grade_para = cells[1].paragraphs[0]
-                grade_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                grade_run = grade_para.add_run(grade)
-                grade_run.font.size = Pt(11)
-                grade_run.bold = True
-                
-                # Add different background colors based on grade value
-                try:
-                    grade_value = int(grade)
-                    cell_shading = OxmlElement('w:shd')
+                # Add grades for each category with styling
+                for col in range(1, 6):
+                    grade = self.report_table.item(row, col).text() if self.report_table.item(row, col) else ""
+                    cells[col].text = ''
+                    grade_para = cells[col].paragraphs[0]
+                    grade_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    grade_run = grade_para.add_run(grade)
+                    grade_run.font.size = Pt(11)
+                    grade_run.bold = True
                     
-                    # Color coding by grade
-                    if grade_value >= 7:
-                        cell_shading.set(qn('w:fill'), "C6E0B4")  # Light green for high grades
-                    elif grade_value >= 4:
-                        cell_shading.set(qn('w:fill'), "FFFFFF")  # White for medium grades
-                    else:
-                        cell_shading.set(qn('w:fill'), "F8CBAD")  # Light red for low grades
+                    # Add color coding based on grade - using consistent color logic
+                    try:
+                        grade_value = int(grade)
+                        cell_shading = OxmlElement('w:shd')
                         
-                    cells[1]._tc.get_or_add_tcPr().append(cell_shading)
-                except (ValueError, TypeError):
-                    # For non-numeric grades, don't add special coloring
-                    pass
+                        if grade_value >= 7:  # High Achievement (7-9)
+                            cell_shading.set(qn('w:fill'), "C6E0B4")  # Light green (hex: C6E0B4)
+                            cells[col]._tc.get_or_add_tcPr().append(cell_shading)
+                        elif grade_value >= 4:  # Satisfactory Achievement (4-6)
+                            # Don't add custom shading for medium grades
+                            pass
+                        else:  # Needs Improvement (1-3)
+                            cell_shading.set(qn('w:fill'), "F8CBAD")  # Light red (hex: F8CBAD)
+                            cells[col]._tc.get_or_add_tcPr().append(cell_shading)
+                    except (ValueError, TypeError):
+                        # Skip coloring for non-numeric values
+                        pass
             
             # Apply alternating row colors to improve readability
             for i, row in enumerate(table.rows):
@@ -482,7 +524,7 @@ class ReportsView(QWidget):
             scale_cells[0].text = "Grades 7-9"
             scale_cells[1].text = "High Achievement"
             
-            # Add green background for high achievement
+            # Add green background for high achievement - C6E0B4 (198, 224, 180)
             cell_shading = OxmlElement('w:shd')
             cell_shading.set(qn('w:fill'), "C6E0B4")  # Light green
             scale_cells[1]._tc.get_or_add_tcPr().append(cell_shading)
@@ -495,7 +537,7 @@ class ReportsView(QWidget):
             scale_cells[0].text = "Grades 1-3"
             scale_cells[1].text = "Needs Improvement"
             
-            # Add red background for needs improvement
+            # Add red background for needs improvement - F8CBAD (248, 203, 173)
             cell_shading = OxmlElement('w:shd')
             cell_shading.set(qn('w:fill'), "F8CBAD")  # Light red
             scale_cells[1]._tc.get_or_add_tcPr().append(cell_shading)

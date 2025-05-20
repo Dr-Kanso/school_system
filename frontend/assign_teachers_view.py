@@ -83,7 +83,18 @@ class AssignTeachersView(QWidget):
         self.firebase = FirebaseClient(id_token=self.id_token)
         self.teachers = []
         self.year_groups = ["Y7", "Y8", "Y9", "Y10", "Y11"]
-        self.subjects = ["Maths", "English", "Science", "French"]
+        self.subjects = [
+            "English Literature", 
+            "English Language",
+            "Psychology",
+            "History",
+            "Maths",
+            "French",
+            "Islamic studies",
+            "Biology",
+            "Chemistry",
+            "Physics"
+        ]
         self.setup_ui()
         self.load_data()
     

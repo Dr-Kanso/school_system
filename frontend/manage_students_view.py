@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QTableView,
     QHBoxLayout, QFormLayout, QLineEdit, QMessageBox, QComboBox,
-    QCheckBox, QGroupBox
+    QCheckBox, QGroupBox, QGridLayout
 )
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel
 from PySide6.QtGui import QFont
@@ -134,13 +134,29 @@ class ManageStudentsView(QWidget):
         
         # Add subject selection
         subjects_group = QGroupBox("Subjects")
-        subjects_layout = QVBoxLayout()
+        subjects_layout = QGridLayout()  # Change to grid layout for better organization
         
         self.subject_checkboxes = {}
-        for subject in ["Maths", "English", "Science", "French"]:
+        subjects = [
+            "English Literature", 
+            "English Language",
+            "Psychology",
+            "History",
+            "Maths",
+            "French",
+            "Islamic studies",
+            "Biology",
+            "Chemistry",
+            "Physics"
+        ]
+        
+        # Arrange subject checkboxes in a grid, 3 columns
+        for i, subject in enumerate(subjects):
             checkbox = QCheckBox(subject)
             self.subject_checkboxes[subject] = checkbox
-            subjects_layout.addWidget(checkbox)
+            row = i // 3
+            col = i % 3
+            subjects_layout.addWidget(checkbox, row, col)
         
         subjects_group.setLayout(subjects_layout)
         form_layout.addRow("", subjects_group)
