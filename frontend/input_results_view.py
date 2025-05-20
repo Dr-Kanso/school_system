@@ -1,11 +1,45 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QTableView, QTableWidget, QTableWidgetItem,
     QHBoxLayout, QComboBox, QMessageBox, QFormLayout, QSpinBox,
-    QGridLayout, QGroupBox, QHeaderView
+    QGridLayout, QGroupBox, QHeaderView, QStyledItemDelegate
 )
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 from PySide6.QtGui import QFont
 from utils.firebase_client import FirebaseClient
+
+class GradeDelegate(QStyledItemDelegate):
+    """Delegate for grade column in results table to provide a dropdown"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.grades = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    
+    def createEditor(self, parent, option, index):
+        """Create dropdown editor for the grade column"""
+        if index.column() == 3:  # Grade column
+            editor = QComboBox(parent)
+            editor.addItems(self.grades)
+            return editor
+        return super().createEditor(parent, option, index)
+    
+    def setEditorData(self, editor, index):
+        """Set the editor data based on the model"""
+        if index.column() == 3 and isinstance(editor, QComboBox):
+            value = index.model().data(index, Qt.DisplayRole)
+            if value in self.grades:
+                idx = self.grades.index(value)
+                editor.setCurrentIndex(idx)
+            else:
+                editor.setCurrentIndex(0)
+        else:
+            super().setEditorData(editor, index)
+    
+    def setModelData(self, editor, model, index):
+        """Update the model with data from the editor"""
+        if index.column() == 3 and isinstance(editor, QComboBox):
+            model.setData(index, editor.currentText(), Qt.EditRole)
+        else:
+            super().setModelData(editor, model, index)
 
 class ResultsTableModel(QAbstractTableModel):
     """Table model for student results"""
@@ -14,7 +48,7 @@ class ResultsTableModel(QAbstractTableModel):
         super().__init__()
         self.students = students or []
         self.headers = ["ID", "Name", "Year Group", "Grade"]
-        self.grades = ["A*", "A", "B", "C", "D", "E", "F", "U"]  # Available grades
+        self.grades = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]  # Numeric grades
         self.results = {}  # Dictionary to store student results: {student_id: grade}
         
     def rowCount(self, parent=QModelIndex()):
@@ -35,7 +69,15 @@ class ResultsTableModel(QAbstractTableModel):
             if col == 0:
                 return student.get('id', '')
             elif col == 1:
-                return student.get('name', '')
+                # Build student name from first_name and last_name if available
+                first_name = student.get('first_name', '')
+                last_name = student.get('last_name', '')
+                
+                if first_name or last_name:
+                    return f"{first_name} {last_name}".strip()
+                else:
+                    # Fallback to old name field
+                    return student.get('name', '')
             elif col == 2:
                 return student.get('year_group', '')
             elif col == 3:
@@ -76,8 +118,17 @@ class ResultsTableModel(QAbstractTableModel):
         return None
     
     def update_students(self, students):
+        """Update the model with student data and set default grade of 1"""
         self.beginResetModel()
         self.students = students
+        
+        # Initialize default grade of "1" for each student
+        for student in self.students:
+            student_id = student.get('id', '')
+            # Only set default if no grade is already assigned
+            if student_id and student_id not in self.results:
+                self.results[student_id] = "1"
+                
         self.endResetModel()
     
     def set_existing_results(self, results_data):
@@ -160,6 +211,10 @@ class InputResultsView(QWidget):
         # Set up table view properties
         self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.results_table.setSelectionBehavior(QTableView.SelectRows)
+        
+        # Add the grade delegate for dropdown selection
+        grade_delegate = GradeDelegate(self.results_table)
+        self.results_table.setItemDelegateForColumn(3, grade_delegate)
         
         main_layout.addWidget(self.results_table)
         
@@ -316,33 +371,38 @@ class InputResultsView(QWidget):
         if self.subject_selector.currentData():
             # Update year group selector for this subject
             self.updateYearGroupSelector(subject)
-    
+            # Clear any previously loaded students
+            self.results_model.update_students([])
+            # Try to load students immediately if a year group is already selected
+            if self.year_group_selector.currentData():
+                self.load_students()
+
     def onYearGroupChanged(self, year_group):
         """Handle year group selection change"""
-        # Could implement additional logic here if needed
-        pass
-    
+        # If a year group is selected and a subject is selected, load students
+        if (year_group and self.year_group_selector.currentData() and 
+            self.subject_selector.currentData()):
+            self.load_students()
+
     def load_students(self):
         """Handle loading students for selected subject and year group"""
         subject = self.subject_selector.currentData()
         year_group = self.year_group_selector.currentData()
         
         if not subject or subject == "":
-            QMessageBox.warning(self, "Selection Error", "Please select a subject.")
+            # Don't show warning when called automatically
             return
             
         if not year_group or year_group == "":
-            QMessageBox.warning(self, "Selection Error", "Please select a year group.")
+            # Don't show warning when called automatically
             return
             
         # Note: term is not required for loading students, only for saving results
-        # We'll display the term selection status for information purposes
         term_id = self.term_dropdown.currentData()
         term_display = self.term_dropdown.currentText()
         
         try:
             # Clear any existing data in the results table
-            # (We'll add proper table implementation below)
             
             # Standardize year group format for querying
             standardized_year_group = year_group.strip().upper()
@@ -350,7 +410,6 @@ class InputResultsView(QWidget):
                 print(f"Invalid year group format: {year_group}")
                 return
                 
-            # Use exact year group match to ensure consistency with student management
             students = self.firebase.query_collection_with_filters(
                 "students", 
                 [("year_group", "==", standardized_year_group)]
@@ -425,13 +484,15 @@ class InputResultsView(QWidget):
             if existing_results:
                 self.results_model.set_existing_results(existing_results)
             
-            # Display success message with term info if selected
-            if term_id:
-                QMessageBox.information(self, "Students Loaded", 
-                                      f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\nSelected term: {term_display}\n\nYou can now enter or update their results.")
-            else:
-                QMessageBox.information(self, "Students Loaded", 
-                                      f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\nPlease select a term before saving results.")
+            # Only show success message when button is clicked, not during auto-loading
+            if sender := self.sender():
+                if sender == self.load_button:
+                    if term_id:
+                        QMessageBox.information(self, "Students Loaded", 
+                                              f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\nSelected term: {term_display}\n\nYou can now enter or update their results.")
+                    else:
+                        QMessageBox.information(self, "Students Loaded", 
+                                              f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\nPlease select a term before saving results.")
             
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to load students: {str(e)}")
@@ -444,11 +505,43 @@ class InputResultsView(QWidget):
         term_id = self.term_dropdown.currentData()
         term_display = self.term_dropdown.currentText()
         
-        # Term is required when saving results
+        # Input validation
         if not subject or not year_group or not term_id:
             QMessageBox.warning(self, "Selection Error", "Please select subject, year group and term.")
             return
+        
+        # Get results from the model
+        results_data = self.results_model.get_results()
+        
+        if not results_data:
+            QMessageBox.warning(self, "No Results", "No grades have been entered yet.")
+            return
             
-        # TODO: Implement actual result saving when the table model is ready
-        QMessageBox.information(self, "Save Results", 
-                              f"Results saved for {subject}, Year Group {year_group}, Term: {term_display}")
+        try:
+            # Format a document ID for results - using a consistent format for easy retrieval
+            results_doc_id = f"{term_id}_{year_group}_{subject}"
+            
+            # Prepare data to save
+            data_to_save = {
+                "term_id": term_id,
+                "year_group": year_group,
+                "subject": subject,
+                "teacher_id": self.user_uid,
+                "student_results": results_data,
+                "timestamp": self.firebase.get_server_timestamp(),
+                "term_name": self.term_dropdown.currentText()
+            }
+            
+            # Save to Firebase
+            self.firebase.create_document("results", results_doc_id, data_to_save)
+            
+            # Show success message with details
+            QMessageBox.information(
+                self, 
+                "Success", 
+                f"Grades saved successfully!\n\nSubject: {subject}\nYear Group: {year_group}\nTerm: {term_display}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save results: {str(e)}")
+            print(f"Exception in save_results: {str(e)}")

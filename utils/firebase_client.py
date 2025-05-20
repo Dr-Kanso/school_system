@@ -259,3 +259,7 @@ class FirebaseClient:
             elif type_name == 'mapValue':
                 return self._parse_fields(value.get('fields', {}))
         return None
+
+    def get_server_timestamp(self):
+        """Return a server timestamp placeholder for Firestore"""
+        return {"fieldValue": {"timestampValue": None}}

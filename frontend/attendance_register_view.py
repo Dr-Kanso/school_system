@@ -297,8 +297,17 @@ class AttendanceRegisterView(QWidget):
             for i, student in enumerate(filtered_students):
                 self.attendance_table.insertRow(i)
                 
-                # Student name
-                name_item = QTableWidgetItem(student.get("name", ""))
+                # Build student name from first_name and last_name if available
+                first_name = student.get("first_name", "")
+                last_name = student.get("last_name", "")
+                
+                if first_name or last_name:
+                    student_name = f"{first_name} {last_name}".strip()
+                else:
+                    # Fallback to old name field
+                    student_name = student.get("name", "")
+                
+                name_item = QTableWidgetItem(student_name)
                 name_item.setData(Qt.UserRole, student.get("id", ""))
                 self.attendance_table.setItem(i, 0, name_item)
                 

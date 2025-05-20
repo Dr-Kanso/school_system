@@ -32,6 +32,15 @@ class StudentTableModel(QAbstractTableModel):
         if col == 0:
             return student.get('id', '')
         elif col == 1:
+            # Display full name by combining first_name and last_name
+            first_name = student.get('first_name', '')
+            last_name = student.get('last_name', '')
+            
+            # If either first_name or last_name exists, use them
+            if first_name or last_name:
+                return f"{first_name} {last_name}".strip()
+            
+            # Fallback to old 'name' field for backward compatibility
             return student.get('name', '')
         elif col == 2:
             return student.get('year_group', '')
@@ -62,7 +71,7 @@ class StudentTableModel(QAbstractTableModel):
             self.students = sorted(self.students, key=lambda x: x.get('id', ''), 
                                  reverse=(order == Qt.DescendingOrder))
         elif column == 1:  # Name
-            self.students = sorted(self.students, key=lambda x: x.get('name', '').lower(), 
+            self.students = sorted(self.students, key=lambda x: (x.get('first_name', '').lower(), x.get('last_name', '').lower()), 
                                  reverse=(order == Qt.DescendingOrder))
         elif column == 2:  # Year Group
             self.students = sorted(self.students, key=lambda x: x.get('year_group', ''), 
@@ -112,8 +121,12 @@ class ManageStudentsView(QWidget):
         # Student input form
         form_layout = QFormLayout()
         
-        self.student_name_input = QLineEdit()
-        form_layout.addRow("Student Name:", self.student_name_input)
+        # Replace single name field with first and last name fields
+        self.first_name_input = QLineEdit()
+        form_layout.addRow("First Name:", self.first_name_input)
+        
+        self.last_name_input = QLineEdit()
+        form_layout.addRow("Last Name:", self.last_name_input)
         
         self.year_group_dropdown = QComboBox()
         self.year_group_dropdown.addItems(["Y7", "Y8", "Y9", "Y10", "Y11"])
@@ -199,7 +212,8 @@ class ManageStudentsView(QWidget):
     
     def add_student(self):
         """Handle adding a new student"""
-        name = self.student_name_input.text().strip()
+        first_name = self.first_name_input.text().strip()
+        last_name = self.last_name_input.text().strip()
         year_group = self.year_group_dropdown.currentText()
         
         # Get selected subjects
@@ -208,8 +222,12 @@ class ManageStudentsView(QWidget):
             if checkbox.isChecked():
                 selected_subjects.append(subject)
         
-        if not name:
-            QMessageBox.warning(self, "Input Error", "Please enter a student name.")
+        if not first_name:
+            QMessageBox.warning(self, "Input Error", "Please enter a first name.")
+            return
+        
+        if not last_name:
+            QMessageBox.warning(self, "Input Error", "Please enter a last name.")
             return
         
         if not selected_subjects:
@@ -220,9 +238,10 @@ class ManageStudentsView(QWidget):
             # Generate a unique student ID
             student_id = str(uuid.uuid4())
             
-            # Create the student in Firebase
+            # Create the student in Firebase with first_name and last_name
             student_data = {
-                "name": name,
+                "first_name": first_name,
+                "last_name": last_name,
                 "year_group": year_group,
                 "subjects": selected_subjects
             }
@@ -232,8 +251,9 @@ class ManageStudentsView(QWidget):
             # Refresh the students list
             self.load_students()
             
-            # Clear the form
-            self.clear_form()
+            # Only clear the name fields, keep subject selections
+            self.first_name_input.clear()
+            self.last_name_input.clear()
             
             QMessageBox.information(self, "Success", "Student added successfully.")
         except Exception as e:
@@ -248,16 +268,27 @@ class ManageStudentsView(QWidget):
         
         # Get the source model index from proxy model
         source_row = self.proxy_model.mapToSource(selected_indexes[0]).row()
-        student_id = self.student_model.students[source_row].get('id', '')
+        student = self.student_model.students[source_row]
+        student_id = student.get('id', '')
         
         if not student_id:
             return
         
+        # Build student name from first_name and last_name if available
+        first_name = student.get('first_name', '')
+        last_name = student.get('last_name', '')
+        
+        if first_name or last_name:
+            student_name = f"{first_name} {last_name}".strip()
+        else:
+            # Fallback to old name field
+            student_name = student.get('name', '')
+            
         # Confirm deletion
         confirm = QMessageBox.question(
             self,
             "Confirm Deletion",
-            f"Are you sure you want to delete student '{self.student_model.students[source_row].get('name', '')}'?",
+            f"Are you sure you want to delete student '{student_name}'?",
             QMessageBox.Yes | QMessageBox.No
         )
         
@@ -284,7 +315,8 @@ class ManageStudentsView(QWidget):
     
     def clear_form(self):
         """Clear the input form"""
-        self.student_name_input.clear()
+        self.first_name_input.clear()
+        self.last_name_input.clear()
         self.year_group_dropdown.setCurrentIndex(0)
         for checkbox in self.subject_checkboxes.values():
             checkbox.setChecked(False)
