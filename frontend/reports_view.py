@@ -319,6 +319,30 @@ class ReportsView(QWidget):
                 section.left_margin = Cm(2.5)
                 section.right_margin = Cm(2.5)
             
+            # Add school details at the top
+            # School name with centered alignment and styling
+            school_name = doc.add_paragraph()
+            school_name.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            school_run = school_name.add_run("IRIS School")
+            school_run.bold = True
+            school_run.font.size = Pt(16)
+            school_run.font.color.rgb = RGBColor(0, 51, 102)  # Navy blue color
+            
+            # School contact details
+            contact_para = doc.add_paragraph()
+            contact_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            contact_para.paragraph_format.space_after = Pt(12)
+            
+            # Add each line of contact details
+            address_run = contact_para.add_run("Address: 100 Carlton Vale, London NW6 5HE\n")
+            address_run.font.size = Pt(10)
+            
+            phone_run = contact_para.add_run("Telephone: 02073728051\n")
+            phone_run.font.size = Pt(10)
+            
+            email_run = contact_para.add_run("Email: irisschool@gmail.com")
+            email_run.font.size = Pt(10)
+            
             # Add a title with custom formatting
             title = doc.add_heading('Student Performance Report', level=1)
             title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -413,7 +437,6 @@ class ReportsView(QWidget):
                 grade_run.bold = True
                 
                 # Add different background colors based on grade value
-                # This is an example - you can customize the coloring logic
                 try:
                     grade_value = int(grade)
                     cell_shading = OxmlElement('w:shd')
@@ -438,6 +461,44 @@ class ReportsView(QWidget):
                         cell_shading = OxmlElement('w:shd')
                         cell_shading.set(qn('w:fill'), "F5F5F5")  # Light gray background
                         cell._tc.get_or_add_tcPr().append(cell_shading)
+            
+            # Add spacing before the grade scale information
+            doc.add_paragraph()
+            
+            # Add grade scale reference
+            scale_para = doc.add_paragraph()
+            scale_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            scale_run = scale_para.add_run("Grade Scale Reference:")
+            scale_run.bold = True
+            scale_run.font.size = Pt(11)
+            
+            # Create a grade scale table
+            scale_table = doc.add_table(rows=3, cols=3)
+            scale_table.style = 'Light Grid'
+            scale_table.alignment = WD_TABLE_ALIGNMENT.LEFT
+            
+            # Fill the grade scale table
+            scale_cells = scale_table.rows[0].cells
+            scale_cells[0].text = "Grades 7-9"
+            scale_cells[1].text = "High Achievement"
+            
+            # Add green background for high achievement
+            cell_shading = OxmlElement('w:shd')
+            cell_shading.set(qn('w:fill'), "C6E0B4")  # Light green
+            scale_cells[1]._tc.get_or_add_tcPr().append(cell_shading)
+            
+            scale_cells = scale_table.rows[1].cells
+            scale_cells[0].text = "Grades 4-6"
+            scale_cells[1].text = "Satisfactory Achievement"
+            
+            scale_cells = scale_table.rows[2].cells
+            scale_cells[0].text = "Grades 1-3"
+            scale_cells[1].text = "Needs Improvement"
+            
+            # Add red background for needs improvement
+            cell_shading = OxmlElement('w:shd')
+            cell_shading.set(qn('w:fill'), "F8CBAD")  # Light red
+            scale_cells[1]._tc.get_or_add_tcPr().append(cell_shading)
             
             # Add spacing before the generated date
             doc.add_paragraph()
