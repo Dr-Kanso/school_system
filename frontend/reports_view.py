@@ -8,10 +8,12 @@ from PySide6.QtGui import QFont, QColor
 from utils.firebase_client import FirebaseClient
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+from docx.enum.section import WD_ORIENT
+from docx.oxml.ns import qn, nsdecls
+from docx.oxml import OxmlElement, parse_xml
+from docx.shared import Twips
 
 class ReportsView(QWidget):
     """View for generating and viewing student performance reports"""
@@ -292,20 +294,7 @@ class ReportsView(QWidget):
                     item = QTableWidgetItem(value)
                     item.setTextAlignment(Qt.AlignCenter)
                     
-                    # Apply color formatting based on grade value - apply consistent color logic
-                    try:
-                        grade_val = int(value)
-                        if grade_val >= 7:  # High Achievement (7-9)
-                            item.setBackground(QColor(198, 224, 180))  # Light green
-                        elif grade_val >= 4:  # Satisfactory Achievement (4-6)
-                            # Leave default/white background
-                            pass
-                        else:  # Needs Improvement (1-3)
-                            item.setBackground(QColor(248, 203, 173))  # Light red
-                    except (ValueError, TypeError):
-                        # No color for empty or non-numeric grades
-                        pass
-                        
+                    # Remove color formatting from the view - only keep it in the export
                     self.report_table.setItem(i, j + 1, item)
             
             # Optionally, fetch attendance data as well if we want to show percentage
@@ -370,41 +359,42 @@ class ReportsView(QWidget):
                 section.bottom_margin = Cm(2)
                 section.left_margin = Cm(2.5)
                 section.right_margin = Cm(2.5)
+                # Set to landscape orientation for better table display
+                section.orientation = WD_ORIENT.LANDSCAPE
             
             # Add school details at the top
-            # School name with centered alignment and styling
-            school_name = doc.add_paragraph()
-            school_name.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            school_run = school_name.add_run("IRIS School")
+            school_para = doc.add_paragraph()
+            school_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            school_run = school_para.add_run("IRIS SCHOOL")
             school_run.bold = True
             school_run.font.size = Pt(16)
-            school_run.font.color.rgb = RGBColor(0, 51, 102)  # Navy blue color
             
-            # School contact details
+            # Address and contact information
             contact_para = doc.add_paragraph()
             contact_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            contact_para.paragraph_format.space_after = Pt(12)
+            contact_para.add_run("Address: 100 Carlton Vale, London NW6 5HE\n").font.size = Pt(10)
+            contact_para.add_run("Telephone: 02073728051 | ").font.size = Pt(10)
+            contact_para.add_run("Email: irisschool@gmail.com").font.size = Pt(10)
             
-            # Add each line of contact details
-            address_run = contact_para.add_run("Address: 100 Carlton Vale, London NW6 5HE\n")
-            address_run.font.size = Pt(10)
-            
-            phone_run = contact_para.add_run("Telephone: 02073728051\n")
-            phone_run.font.size = Pt(10)
-            
-            email_run = contact_para.add_run("Email: irisschool@gmail.com")
-            email_run.font.size = Pt(10)
-            
-            # Add a title with custom formatting
+            # Add title
             title = doc.add_heading('Student Performance Report', level=1)
             title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            # Apply custom font size and bold to the title run
-            title_run = title.runs[0]
-            title_run.font.size = Pt(18)
-            title_run.font.color.rgb = RGBColor(0, 51, 102)  # Navy blue color
             
-            # Add a horizontal line for visual separation
-            self._add_horizontal_line(doc)
+            # Add a simple horizontal line using paragraph border
+            border_para = doc.add_paragraph()
+            border_para.paragraph_format.space_before = Pt(0)
+            border_para.paragraph_format.space_after = Pt(12)
+            
+            # Add bottom border using simplified XML approach
+            pPr = border_para._p.get_or_add_pPr()
+            pBdr = OxmlElement('w:pBdr')
+            bottom = OxmlElement('w:bottom')
+            bottom.set(qn('w:val'), 'single')
+            bottom.set(qn('w:sz'), '6')  # Border size
+            bottom.set(qn('w:space'), '0')
+            bottom.set(qn('w:color'), '4F81BD')  # Blue line color
+            pBdr.append(bottom)
+            pPr.append(pBdr)
             
             # Extract student name, year group, and term from the info text
             student_parts = student_info.replace('<b>', '').replace('</b>', '').split('|')
@@ -412,147 +402,135 @@ class ReportsView(QWidget):
             year_group = student_parts[1].split(':')[1].strip() if len(student_parts) > 1 else "Unknown"
             term_name = student_parts[2].split(':')[1].strip() if len(student_parts) > 2 else "Unknown"
             
-            # Add styled student information
-            student_info_para = doc.add_paragraph()
-            student_info_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            student_info_para.space_after = Pt(6)
+            # Add student information
+            info_para = doc.add_paragraph()
+            info_para.add_run("Student: ").bold = True
+            info_para.add_run(student_name)
+            info_para.add_run(" | ")
+            info_para.add_run("Year Group: ").bold = True
+            info_para.add_run(year_group)
+            info_para.add_run(" | ")
+            info_para.add_run("Term: ").bold = True
+            info_para.add_run(term_name)
             
-            # Add each piece of student info with proper styling
-            self._add_styled_text(student_info_para, "Student: ", 'bold')
-            self._add_styled_text(student_info_para, f"{student_name}", 'normal')
-            student_info_para.add_run(" | ")
-            self._add_styled_text(student_info_para, "Year Group: ", 'bold')  
-            self._add_styled_text(student_info_para, f"{year_group}", 'normal')
-            student_info_para.add_run(" | ")
-            self._add_styled_text(student_info_para, "Term: ", 'bold')
-            self._add_styled_text(student_info_para, f"{term_name}", 'normal')
-            
-            # Add spacer
+            # Add space before grades table
             doc.add_paragraph()
             
-            # Add a table for the report data with custom styling
-            table = doc.add_table(rows=1, cols=6)  # Subject + 5 grade columns
+            # Add a full table for performance summary with all columns
+            column_headers = ["Subject", "Current Grade", "Target Grade", "Homework", "Behaviour", "Punctuality"]
+            num_columns = len(column_headers)
+            
+            # Create the table
+            table = doc.add_table(rows=1, cols=num_columns)
             table.style = 'Table Grid'
-            table.alignment = WD_TABLE_ALIGNMENT.CENTER
             
-            # Set table width
-            table.autofit = False
-            table.width = Inches(6)
-            
-            # Style the header row with background color
+            # Add headers
             header_cells = table.rows[0].cells
+            for i, header in enumerate(column_headers):
+                header_cells[i].text = header
+            
+            # Make headers bold
             for cell in header_cells:
-                cell_shading = OxmlElement('w:shd')
-                cell_shading.set(qn('w:fill'), "D0E0E3")  # Light blue background
-                cell._tc.get_or_add_tcPr().append(cell_shading)
-                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                # Add dark gray background to header cells
+                shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="D0D0D0"/>')
+                cell._element.get_or_add_tcPr().append(shading_elm)
+                
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.bold = True
+                        run.font.size = Pt(11)
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
-            # Add table headers with consistent naming
-            headers = ["Subject", "Current Grade", "Target Grade", "Homework", "Behaviour", "Punctuality"]
-            for i, header_text in enumerate(headers):
-                header_cells[i].text = ''  # Clear default text
-                header_para = header_cells[i].paragraphs[0]
-                header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                header_run = header_para.add_run(header_text)
-                header_run.bold = True
-                header_run.font.size = Pt(11)
-            
-            # Add data rows
+            # Add data rows with all performance metrics
             for row in range(self.report_table.rowCount()):
                 cells = table.add_row().cells
                 
-                # Add subject
-                subject = self.report_table.item(row, 0).text()
-                cells[0].text = ''
-                subject_para = cells[0].paragraphs[0]
-                subject_run = subject_para.add_run(subject)
-                subject_run.font.size = Pt(11)
-                
-                # Add grades for each category with styling
-                for col in range(1, 6):
-                    grade = self.report_table.item(row, col).text() if self.report_table.item(row, col) else ""
-                    cells[col].text = ''
-                    grade_para = cells[col].paragraphs[0]
-                    grade_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    grade_run = grade_para.add_run(grade)
-                    grade_run.font.size = Pt(11)
-                    grade_run.bold = True
+                # Fill in the row with all columns from the table
+                for col in range(min(num_columns, self.report_table.columnCount())):
+                    item = self.report_table.item(row, col)
+                    value = item.text() if item else ""
+                    cells[col].text = value
                     
-                    # Add color coding based on grade - using consistent color logic
-                    try:
-                        grade_value = int(grade)
-                        cell_shading = OxmlElement('w:shd')
+                    # Center-align all cells except Subject
+                    if col > 0:
+                        cells[col].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                         
-                        if grade_value >= 7:  # High Achievement (7-9)
-                            cell_shading.set(qn('w:fill'), "C6E0B4")  # Light green (hex: C6E0B4)
-                            cells[col]._tc.get_or_add_tcPr().append(cell_shading)
-                        elif grade_value >= 4:  # Satisfactory Achievement (4-6)
-                            # Don't add custom shading for medium grades
-                            pass
-                        else:  # Needs Improvement (1-3)
-                            cell_shading.set(qn('w:fill'), "F8CBAD")  # Light red (hex: F8CBAD)
-                            cells[col]._tc.get_or_add_tcPr().append(cell_shading)
-                    except (ValueError, TypeError):
-                        # Skip coloring for non-numeric values
-                        pass
+                        # Apply color coding based on grade value for the grade columns
+                        if col in [1, 2, 3, 4, 5]: # Grade columns
+                            try:
+                                grade_value = int(value) if value else 0
+                                cell_shading = OxmlElement('w:shd')
+                                
+                                if grade_value >= 7:  # High grades
+                                    cell_shading.set(qn('w:fill'), "C6E0B4")  # Light green
+                                elif grade_value <= 3:  # Low grades
+                                    cell_shading.set(qn('w:fill'), "F8CBAD")  # Light red
+                                    
+                                cells[col]._tc.get_or_add_tcPr().append(cell_shading)
+                            except (ValueError, TypeError):
+                                pass
             
-            # Apply alternating row colors to improve readability
+            # Apply alternating row colors for readability
             for i, row in enumerate(table.rows):
-                if i > 0 and i % 2 == 0:  # Skip header row and apply to every other row
+                if i % 2 == 1:  # Alternating rows
                     for cell in row.cells:
-                        cell_shading = OxmlElement('w:shd')
-                        cell_shading.set(qn('w:fill'), "F5F5F5")  # Light gray background
-                        cell._tc.get_or_add_tcPr().append(cell_shading)
+                        # Get current shading or create new one
+                        tcPr = cell._tc.get_or_add_tcPr()
+                        shading_elem = tcPr.xpath('./w:shd')
+                        
+                        # Only add shading if there's not already one from grade coloring
+                        if not shading_elem:
+                            shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="F5F5F5"/>')
+                            tcPr.append(shading_elm)
             
-            # Add spacing before the grade scale information
-            doc.add_paragraph()
+            # Add grade scale information
+            doc.add_paragraph().add_run("\n") # Add space
+            doc.add_paragraph().add_run("Grade Scale Reference:").bold = True
             
-            # Add grade scale reference
-            scale_para = doc.add_paragraph()
-            scale_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            scale_run = scale_para.add_run("Grade Scale Reference:")
-            scale_run.bold = True
-            scale_run.font.size = Pt(11)
-            
-            # Create a grade scale table
-            scale_table = doc.add_table(rows=3, cols=3)
+            # Create a grade scale table with simplified styling
+            scale_table = doc.add_table(rows=3, cols=2)
             scale_table.style = 'Light Grid'
-            scale_table.alignment = WD_TABLE_ALIGNMENT.LEFT
             
-            # Fill the grade scale table
-            scale_cells = scale_table.rows[0].cells
-            scale_cells[0].text = "Grades 7-9"
-            scale_cells[1].text = "High Achievement"
+            # Add scale information
+            grades_info = [
+                ("Grades 7-9", "High Achievement"),
+                ("Grades 4-6", "Satisfactory Achievement"),
+                ("Grades 1-3", "Needs Improvement")
+            ]
             
-            # Add green background for high achievement - C6E0B4 (198, 224, 180)
-            cell_shading = OxmlElement('w:shd')
-            cell_shading.set(qn('w:fill'), "C6E0B4")  # Light green
-            scale_cells[1]._tc.get_or_add_tcPr().append(cell_shading)
+            for i, (grades, description) in enumerate(grades_info):
+                scale_table.cell(i, 0).text = grades
+                scale_table.cell(i, 1).text = description
+                
+                # Center the grade text
+                scale_table.cell(i, 0).paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Add appropriate background color to match our grade coloring
+                shading_elm = None
+                if i == 0:  # High grades
+                    shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="C6E0B4"/>')
+                elif i == 2:  # Low grades
+                    shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="F8CBAD"/>')
+                    
+                if shading_elm:
+                    scale_table.cell(i, 1)._tc.get_or_add_tcPr().append(shading_elm)
+                
+                # Bold the grade column
+                for run in scale_table.cell(i, 0).paragraphs[0].runs:
+                    run.bold = True
+                    run.font.size = Pt(9)
+                
+                # Regular font for description
+                for run in scale_table.cell(i, 1).paragraphs[0].runs:
+                    run.font.size = Pt(9)
             
-            scale_cells = scale_table.rows[1].cells
-            scale_cells[0].text = "Grades 4-6"
-            scale_cells[1].text = "Satisfactory Achievement"
-            
-            scale_cells = scale_table.rows[2].cells
-            scale_cells[0].text = "Grades 1-3"
-            scale_cells[1].text = "Needs Improvement"
-            
-            # Add red background for needs improvement - F8CBAD (248, 203, 173)
-            cell_shading = OxmlElement('w:shd')
-            cell_shading.set(qn('w:fill'), "F8CBAD")  # Light red
-            scale_cells[1]._tc.get_or_add_tcPr().append(cell_shading)
-            
-            # Add spacing before the generated date
-            doc.add_paragraph()
-            
-            # Add generated date with proper italic formatting
-            current_date = QDate.currentDate().toString("ddd MMM d yyyy")
-            date_paragraph = doc.add_paragraph()
-            date_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            date_run = date_paragraph.add_run(f"Generated on {current_date}")
+            # Add date at the bottom
+            doc.add_paragraph().add_run("\n") # Add space
+            date_para = doc.add_paragraph()
+            date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            date_run = date_para.add_run(f"Generated on {QDate.currentDate().toString('MMMM d, yyyy')}")
             date_run.italic = True
             date_run.font.size = Pt(9)
-            date_run.font.color.rgb = RGBColor(128, 128, 128)  # Gray text
             
             # Save the document
             doc.save(file_path)
@@ -565,39 +543,3 @@ class ReportsView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Failed to export report: {str(e)}")
             print(f"Error during export: {str(e)}")
-
-    def _add_horizontal_line(self, doc):
-        """Add a horizontal line to the document"""
-        paragraph = doc.add_paragraph()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = paragraph.add_run()
-        run.add_break()
-        
-        # Add a horizontal line using a border on a paragraph
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_fmt = p.paragraph_format
-        p_fmt.space_before = Pt(0)
-        p_fmt.space_after = Pt(12)
-        
-        # Add bottom border to this paragraph
-        border = OxmlElement('w:pBdr')
-        bottom = OxmlElement('w:bottom')
-        bottom.set(qn('w:val'), 'single')
-        bottom.set(qn('w:sz'), '4')
-        bottom.set(qn('w:space'), '0')
-        bottom.set(qn('w:color'), '4F81BD')  # Blue line
-        border.append(bottom)
-        p._p.get_or_add_pPr().append(border)
-
-    def _add_styled_text(self, paragraph, text, style):
-        """Add text with the specified style to a paragraph"""
-        run = paragraph.add_run(text)
-        
-        if style == 'bold':
-            run.bold = True
-            run.font.size = Pt(11)
-        elif style == 'normal':
-            run.font.size = Pt(11)
-        
-        return run
