@@ -122,18 +122,26 @@ class ResultsTableModel(QAbstractTableModel):
         self.beginResetModel()
         self.students = students
         
-        # Initialize default grade of "1" for each student
+        # Clear all previous results to avoid data from previous subjects interfering
+        self.results = {}
+        
+        # Initialize default grade of "1" for every student
         for student in self.students:
             student_id = student.get('id', '')
-            # Only set default if no grade is already assigned
-            if student_id and student_id not in self.results:
+            if student_id:
                 self.results[student_id] = "1"
                 
         self.endResetModel()
     
     def set_existing_results(self, results_data):
-        """Load existing results data"""
-        self.results = results_data
+        """Load existing results data and reset missing grades to 1"""
+        self.results = {}
+        for student in self.students:
+            student_id = student.get('id', '')
+            if student_id in results_data:
+                self.results[student_id] = results_data[student_id]
+            else:
+                self.results[student_id] = "1"
         self.dataChanged.emit(
             self.index(0, 3), 
             self.index(self.rowCount()-1, 3)
@@ -366,10 +374,17 @@ class InputResultsView(QWidget):
             self.updateYearGroupSelector(subject)
             # Clear any previously loaded students
             self.results_model.update_students([])
+            
+            # Try to load students immediately if a year group is already selected
+            if self.year_group_selector.currentData() and self.term_dropdown.currentData():
+                self.load_students(auto_triggered=True)
 
     def onYearGroupChanged(self, year_group):
         """Handle year group selection change"""
-        pass
+        # If a year group is selected and a subject is selected, load students
+        if (self.year_group_selector.currentData() and self.subject_selector.currentData() 
+            and self.term_dropdown.currentData()):
+            self.load_students(auto_triggered=True)
 
     def onTermChanged(self, index):
         """Handle term selection change"""
@@ -432,17 +447,19 @@ class InputResultsView(QWidget):
             
         return None
     
-    def load_students(self):
+    def load_students(self, auto_triggered=False):
         """Handle loading students for selected subject and year group"""
         subject = self.subject_selector.currentData()
         year_group = self.year_group_selector.currentData()
         
         if not subject or subject == "":
-            QMessageBox.warning(self, "Selection Error", "Please select a subject.")
+            if not auto_triggered:  # Only show warnings when user explicitly clicks the button
+                QMessageBox.warning(self, "Selection Error", "Please select a subject.")
             return
             
         if not year_group or year_group == "":
-            QMessageBox.warning(self, "Selection Error", "Please select a year group.")
+            if not auto_triggered:  # Only show warnings when user explicitly clicks the button
+                QMessageBox.warning(self, "Selection Error", "Please select a year group.")
             return
             
         # Note: term is not required for loading students, only for saving results
@@ -463,7 +480,8 @@ class InputResultsView(QWidget):
             
             if not students:
                 print(f"No students found for year group: {year_group}")
-                QMessageBox.information(self, "No Students", f"No students found for year group {year_group}")
+                if not auto_triggered:
+                    QMessageBox.information(self, "No Students", f"No students found for year group {year_group}")
                 return
                 
             print(f"Found {len(students)} students for year group {year_group}")
@@ -507,7 +525,8 @@ class InputResultsView(QWidget):
             print(f"After filtering: {len(filtered_students)} students taking {subject}")
             
             if not filtered_students:
-                QMessageBox.information(self, "No Students", f"No students found in {year_group} taking {subject}")
+                if not auto_triggered:
+                    QMessageBox.information(self, "No Students", f"No students found in {year_group} taking {subject}")
                 return
                 
             # Check for existing results using our helper method
@@ -519,24 +538,27 @@ class InputResultsView(QWidget):
             # Load existing results if available
             if existing_results:
                 self.results_model.set_existing_results(existing_results)
-                # Inform the user we're loading saved results
-                QMessageBox.information(
-                    self, 
-                    "Existing Results Loaded", 
-                    f"Previously saved results for {subject}, {year_group} in {term_display} have been loaded."
-                )
+                # Inform the user we're loading saved results, but only if not auto-triggered
+                if not auto_triggered:
+                    QMessageBox.information(
+                        self, 
+                        "Existing Results Loaded", 
+                        f"Previously saved results for {subject}, {year_group} in {term_display} have been loaded."
+                    )
             else:
                 # Otherwise, the update_students method will have set default grade "1"
-                QMessageBox.information(
-                    self, 
-                    "Students Loaded", 
-                    f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\n"
-                    f"No existing results found for {term_display if term_id else 'the selected term'}.\n\n"
-                    "Default grades of '1' have been applied. Adjust as needed and save."
-                )
+                if not auto_triggered:  # Only show message when explicitly clicked
+                    QMessageBox.information(
+                        self, 
+                        "Students Loaded", 
+                        f"Loaded {len(filtered_students)} students for {subject}, {year_group}.\n\n"
+                        f"No existing results found for {term_display if term_id else 'the selected term'}.\n\n"
+                        "Default grades of '1' have been applied. Adjust as needed and save."
+                    )
             
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to load students: {str(e)}")
+            if not auto_triggered:  # Only show errors for explicit user actions
+                QMessageBox.warning(self, "Error", f"Failed to load students: {str(e)}")
             print(f"Exception in load_students: {str(e)}, type: {type(e)}")
     
     def save_results(self):
